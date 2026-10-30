@@ -454,6 +454,8 @@ Return ONLY valid JSON matching this exact structure (no markdown fences, no ext
       logs.push(
         `> [CLAUDE VISION] Sending ${validImages.length} image(s) to Anthropic (${model})...`
       );
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
       const resp = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
@@ -463,7 +465,7 @@ Return ONLY valid JSON matching this exact structure (no markdown fences, no ext
         },
         body: JSON.stringify({
           model,
-          max_tokens: 1200,
+          max_tokens: 900,
           temperature: 0.4,
           messages: [
             {
@@ -472,7 +474,9 @@ Return ONLY valid JSON matching this exact structure (no markdown fences, no ext
             },
           ],
         }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
 
       if (!resp.ok) {
         const errText = await resp.text();
@@ -482,6 +486,10 @@ Return ONLY valid JSON matching this exact structure (no markdown fences, no ext
             90
           )}`
         );
+        // If authentication error (401/403), do not retry other models
+        if (resp.status === 401 || resp.status === 403) {
+          break;
+        }
         continue;
       }
 
@@ -618,118 +626,124 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const uniqueTagTerms = Array.from(new Set(tagSearchTerms)).slice(0, 5);
-    const uniqueEntityTerms = Array.from(new Set(entitySearchTerms)).slice(0, 5);
+    const uniqueTagTerms = Array.from(new Set(tagSearchTerms)).slice(0, 3);
+    const uniqueEntityTerms = Array.from(new Set(entitySearchTerms)).slice(0, 3);
 
     const tagUrns: string[] = [];
     const entityIds: string[] = [];
 
-    // 1A. Resolve Qloo Tag URNs via /v2/tags
-    for (const term of uniqueTagTerms) {
-      try {
-        const tagUrl = `${QLOO_BASE_URL}/v2/tags?filter.query=${encodeURIComponent(
-          term
-        )}&take=3`;
-        logs.push(`> GET ${tagUrl}`);
-        const tagResp = await fetch(tagUrl, { headers });
-        if (tagResp.ok) {
-          const data = await tagResp.json();
-          const results = data?.results?.tags || data?.results || [];
-          if (Array.isArray(results)) {
-            for (const item of results.slice(0, 2)) {
-              const id = item?.id || item?.tag_id;
-              if (id && !tagUrns.includes(id)) {
-                tagUrns.push(id);
-                logs.push(`  [+] Qloo Tag URN: ${id}`);
-              }
-            }
-          }
-        }
-      } catch {
-        // continue
-      }
-    }
-
-    // 1B. Resolve Qloo Entity IDs via /search (powered by Claude's entity_queries!)
-    for (const term of uniqueEntityTerms) {
-      try {
-        const searchUrl = `${QLOO_BASE_URL}/search?query=${encodeURIComponent(
-          term
-        )}&take=2`;
-        logs.push(`> GET ${searchUrl}`);
-        const sResp = await fetch(searchUrl, { headers });
-        if (sResp.ok) {
-          const sdata = await sResp.json();
-          const sresults = sdata?.results || [];
-          if (Array.isArray(sresults)) {
-            for (const ent of sresults.slice(0, 2)) {
-              const entId = ent?.entity_id || ent?.id;
-              if (entId && !entityIds.includes(String(entId))) {
-                entityIds.push(String(entId));
-                logs.push(
-                  `  [+] Qloo Entity Seed: ${ent?.name || term} (${String(
-                    entId
-                  ).slice(0, 10)}...)`
-                );
-              }
-            }
-          }
-        }
-      } catch {
-        // continue
-      }
-    }
-
-    // Step 2: Query Qloo /v2/insights with resolved Tag URNs and Entity IDs
-    if (tagUrns.length > 0 || entityIds.length > 0) {
-      for (const etype of entityTypes) {
+    // 1A & 1B IN PARALLEL: Resolve Qloo Tag URNs (/v2/tags) and Entity IDs (/search) simultaneously!
+    await Promise.all([
+      ...uniqueTagTerms.map(async (term) => {
         try {
-          const params = new URLSearchParams({
-            "filter.type": etype,
-            take: "4",
-          });
-          if (entityIds.length > 0) {
-            params.set(
-              "signal.interests.entities",
-              entityIds.slice(0, 4).join(",")
-            );
-          }
-          if (tagUrns.length > 0) {
-            params.set("signal.interests.tags", tagUrns.slice(0, 4).join(","));
-          }
-
-          const insightsUrl = `${QLOO_BASE_URL}/v2/insights?${params.toString()}`;
-          logs.push(`> GET ${QLOO_BASE_URL}/v2/insights?filter.type=${etype}`);
-          const resp = await fetch(insightsUrl, { headers });
-          if (resp.ok) {
-            const payload = await resp.json();
-            const entities = payload?.results?.entities || payload?.results || [];
-            if (Array.isArray(entities) && entities.length > 0) {
-              logs.push(
-                `  [OK] Qloo /v2/insights returned ${entities.length} matches for ${etype}`
-              );
-              const shortType = etype.split(":").pop() || "artist";
-              for (const item of entities.slice(0, 4)) {
-                const props = item?.properties || {};
-                qlooLiveEntities.push({
-                  id: item?.entity_id || item?.id || "",
-                  name: item?.name || "Cultural Match",
-                  type: shortType,
-                  sub:
-                    props?.short_description ||
-                    props?.address ||
-                    item?.disambiguation ||
-                    `Qloo Taste Match (${shortType.toUpperCase()})`,
-                  affinity: 95,
-                  source: "qloo_live",
-                });
+          const tagUrl = `${QLOO_BASE_URL}/v2/tags?filter.query=${encodeURIComponent(
+            term
+          )}&take=2`;
+          logs.push(`> GET ${tagUrl}`);
+          const tagResp = await fetch(tagUrl, { headers });
+          if (tagResp.ok) {
+            const data = await tagResp.json();
+            const results = data?.results?.tags || data?.results || [];
+            if (Array.isArray(results)) {
+              for (const item of results.slice(0, 2)) {
+                const id = item?.id || item?.tag_id;
+                if (id && !tagUrns.includes(id)) {
+                  tagUrns.push(id);
+                  logs.push(`  [+] Qloo Tag URN: ${id}`);
+                }
               }
             }
           }
         } catch {
           // continue
         }
-      }
+      }),
+      ...uniqueEntityTerms.map(async (term) => {
+        try {
+          const searchUrl = `${QLOO_BASE_URL}/search?query=${encodeURIComponent(
+            term
+          )}&take=2`;
+          logs.push(`> GET ${searchUrl}`);
+          const sResp = await fetch(searchUrl, { headers });
+          if (sResp.ok) {
+            const sdata = await sResp.json();
+            const sresults = sdata?.results || [];
+            if (Array.isArray(sresults)) {
+              for (const ent of sresults.slice(0, 2)) {
+                const entId = ent?.entity_id || ent?.id;
+                if (entId && !entityIds.includes(String(entId))) {
+                  entityIds.push(String(entId));
+                  logs.push(
+                    `  [+] Qloo Entity Seed: ${ent?.name || term} (${String(
+                      entId
+                    ).slice(0, 10)}...)`
+                  );
+                }
+              }
+            }
+          }
+        } catch {
+          // continue
+        }
+      }),
+    ]);
+
+    // Step 2 IN PARALLEL: Query Qloo /v2/insights across all 4 entityTypes simultaneously!
+    if (tagUrns.length > 0 || entityIds.length > 0) {
+      await Promise.all(
+        entityTypes.map(async (etype) => {
+          try {
+            const params = new URLSearchParams({
+              "filter.type": etype,
+              take: "4",
+            });
+            if (entityIds.length > 0) {
+              params.set(
+                "signal.interests.entities",
+                entityIds.slice(0, 4).join(",")
+              );
+            }
+            if (tagUrns.length > 0) {
+              params.set(
+                "signal.interests.tags",
+                tagUrns.slice(0, 4).join(",")
+              );
+            }
+
+            const insightsUrl = `${QLOO_BASE_URL}/v2/insights?${params.toString()}`;
+            logs.push(`> GET ${QLOO_BASE_URL}/v2/insights?filter.type=${etype}`);
+            const resp = await fetch(insightsUrl, { headers });
+            if (resp.ok) {
+              const payload = await resp.json();
+              const entities =
+                payload?.results?.entities || payload?.results || [];
+              if (Array.isArray(entities) && entities.length > 0) {
+                logs.push(
+                  `  [OK] Qloo /v2/insights returned ${entities.length} matches for ${etype}`
+                );
+                const shortType = etype.split(":").pop() || "artist";
+                for (const item of entities.slice(0, 4)) {
+                  const props = item?.properties || {};
+                  qlooLiveEntities.push({
+                    id: item?.entity_id || item?.id || "",
+                    name: item?.name || "Cultural Match",
+                    type: shortType,
+                    sub:
+                      props?.short_description ||
+                      props?.address ||
+                      item?.disambiguation ||
+                      `Qloo Taste Match ({shortType.toUpperCase()})`,
+                    affinity: 95,
+                    source: "qloo_live",
+                  });
+                }
+              }
+            }
+          } catch {
+            // continue
+          }
+        })
+      );
 
       if (qlooLiveEntities.length > 0) {
         qlooMode = "QLOO_LIVE_API";

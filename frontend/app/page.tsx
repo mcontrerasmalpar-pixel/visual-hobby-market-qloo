@@ -340,7 +340,6 @@ export default function HomePage() {
         ? tagsToQuery
         : ["botanical", "ceramics & clay", "analog photography"];
     setIsLoading(true);
-    setHasUnlockedResults(true);
 
     try {
       const res = await fetch(`${getApiBase()}/api/recommendations`, {
@@ -406,6 +405,7 @@ export default function HomePage() {
           data.hobbies[0].cultural_matches?.[0]?.name || "Qloo Taste Match";
         setChosenQlooMatch(firstMatch);
       }
+      setHasUnlockedResults(true);
     } catch (err) {
       setTerminalLogs((prev) => [
         ...prev,
