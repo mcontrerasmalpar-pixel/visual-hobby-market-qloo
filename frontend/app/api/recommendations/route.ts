@@ -54,51 +54,51 @@ interface AestheticTemplate {
 }
 
 const AESTHETIC_HOBBY_MATRIX: Record<string, AestheticTemplate> = {
-  "y2k retro": {
-    hobby_title: "Y2K Zine Making, Scrapbooking & 2000s Digicam Hunting",
-    category: "CREATIVE DESIGN / ZINES",
+  "ceramics & clay": {
+    hobby_title: "Hand-Built Stoneware Pinch Pots, Ceramic Glazing & Trinket Trays",
+    category: "CERAMICS / TACTILE CRAFT",
     difficulty: "BEGINNER",
     match_score: 99,
     description:
-      "Capture everyday moments with early-2000s CCD Cyber-shot cameras, print glossy sticker sheets, and craft physical collage zines with your friends.",
+      "Shape speckled stoneware or air-dry clay into morning matcha bowls, incense holders, and hand-painted trinket trays at your kitchen table.",
     starter_kit: [
-      "2000s CCD Digicam (Sony Cyber-shot)",
-      "Glossy sticker paper & gel pens",
-      "Blender 3D (low-poly retro mode)",
+      "Speckled stoneware or air-dry clay block",
+      "Wooden rib tool, sponge & wire clay cutter",
+      "Food-safe matte glaze or pastel underglazes",
     ],
-    qloo_queries: ["electronic", "pop art", "video games", "anime"],
+    qloo_queries: ["ceramics", "pottery", "craft", "folk art"],
     fallback_entities: [
       {
-        name: "Daft Punk - Discovery",
+        name: "Ichiko Aoba - Windswept Adan",
         type: "artist",
-        sub: "French Touch / Y2K Anthem",
+        sub: "Acoustic Ambient / Craft Soundtrack",
       },
       {
-        name: "Jet Set Radio",
+        name: "Little Forest",
         type: "movie",
-        sub: "Y2K Aesthetic Cult Classic",
+        sub: "Slow Living & Handcrafted Seasons",
       },
       {
-        name: "The Designers Republic",
+        name: "A Potter's Book (Bernard Leach)",
         type: "book",
-        sub: "Futuristic Graphic Design",
+        sub: "Foundational Studio Pottery Guide",
       },
     ],
   },
-  anime: {
+  "anime & illustration": {
     hobby_title:
-      "Cel-Shading Digital Illustration, Artbook Collecting & Figure Customizing",
-    category: "ANIME / POP CULTURE",
+      "Watercolor & Cel-Shading Character Sketching, Artbooks & Figure Painting",
+    category: "ILLUSTRATION / ANIMATION",
     difficulty: "BEGINNER",
     match_score: 99,
     description:
-      "Design your own 2000s-style anime characters, customize blind-box vinyl figures or Gunpla kits, and explore iconic Japanese animation soundtracks.",
+      "Paint expressive storyboards and cozy background studies inspired by classic animation studios, and customize vinyl figures or model kits.",
     starter_kit: [
-      "Sketchbook + Copic markers or Procreate",
-      "Blank vinyl figure / Model kit",
-      "Japanese Animation Studio Artbook",
+      "Hot-press watercolor pad + alcohol markers",
+      "Blank vinyl figure or model kit",
+      "Animation background artbook",
     ],
-    qloo_queries: ["anime", "studio ghibli", "manga", "j-pop"],
+    qloo_queries: ["anime", "studio ghibli", "manga", "illustration"],
     fallback_entities: [
       {
         name: "Studio Ghibli / Hayao Miyazaki",
@@ -106,113 +106,113 @@ const AESTHETIC_HOBBY_MATRIX: Record<string, AestheticTemplate> = {
         sub: "Iconic Japanese Animation",
       },
       {
-        name: "Cowboy Bebop (Yoko Kanno)",
+        name: "Joe Hisaishi",
         type: "artist",
-        sub: "Anime Soundtrack & Jazz",
+        sub: "Orchestral Animation Soundtracks",
       },
       {
-        name: "Akihabara & Nakano Broadway",
+        name: "Ghibli Museum, Mitaka",
         type: "place",
-        sub: "Anime, Figures & Retro Artbooks",
+        sub: "Animation & Sketchbook Sanctuary",
       },
     ],
   },
-  "kawaii pop": {
-    hobby_title: "Polymer Clay Art Toys, Deco-Den Crafting & UV Resin Charms",
-    category: "CRAFTS / TOY ART",
+  "vintage vinyl": {
+    hobby_title: "Flea Market Vinyl Crate Digging, Cassette Mixtapes & Hi-Fi Listening",
+    category: "MUSIC / ANALOG AUDIO",
     difficulty: "BEGINNER",
     match_score: 98,
     description:
-      "Sculpt and paint your own collectible blind-box style figures, decorate phone cases with whipped silicone clay (Deco-Den), and cast glittery Y2K charms.",
+      "Hunt weekend indie markets for 70s soul, city pop, and ambient LP pressings, clean and sleeve your records, and curate physical mixtapes.",
     starter_kit: [
-      "Polymer or air-dry clay",
-      "Pastel acrylic paints & high-gloss varnish",
-      "Mini flower beads, rhinestones & UV resin",
+      "Belt-drive turntable & carbon fiber brush",
+      "Anti-static inner sleeves & crate dividers",
+      "Listening notes journal",
     ],
-    qloo_queries: ["pop art", "sanrio", "japanese pop", "illustration"],
+    qloo_queries: ["vinyl", "city pop", "indie folk", "soul music"],
     fallback_entities: [
       {
-        name: "Takashi Murakami",
+        name: "Tatsuro Yamashita",
         type: "artist",
-        sub: "Superflat Pop Art & Figures",
+        sub: "Warm Analog City Pop",
       },
       {
-        name: "Harajuku Takeshita Street",
+        name: "High Fidelity",
+        type: "movie",
+        sub: "Record Store Culture Classic",
+      },
+      {
+        name: "Amoeba Music",
         type: "place",
-        sub: "Kawaii Pop Culture Hub",
-      },
-      {
-        name: "FRUiTS Magazine (Shoichi Aoki)",
-        type: "book",
-        sub: "Harajuku Street Fashion & Pop",
+        sub: "Legendary Independent Record Store",
       },
     ],
   },
-  cyberpunk: {
-    hobby_title: "Retro Hardware Modding & Synthwave Jamming",
-    category: "TECH / AUDIO",
+  "retro gaming": {
+    hobby_title: "Handheld Console Modding, Pixel Art Sprites & Cozy Indie Game Dev",
+    category: "TECH / PIXEL ART",
     difficulty: "INTERMEDIATE",
-    match_score: 98,
+    match_score: 97,
     description:
-      "Build custom translucent mechanical keyboards with neon lighting, mod 2000s handheld consoles, or produce synthwave tracks using software synthesizers.",
+      "Restore classic pocket handhelds with IPS backlit shells, draw 16-bit pixel art tilesets in Aseprite, and build tiny narrative games.",
     starter_kit: [
-      "Translucent keycaps & soldering kit",
-      "Free DAW (Vital Synth)",
-      "Vintage CCD digital camera",
+      "Aseprite or Pico-8 fantasy console",
+      "Custom translucent shell & screwdriver kit",
+      "Chiptune / synth soundtrack playlist",
     ],
-    qloo_queries: ["cyberpunk", "synthwave", "blade runner", "electronic music"],
+    qloo_queries: ["video games", "pixel art", "chiptune", "indie games"],
     fallback_entities: [
-      { name: "Kavinsky", type: "artist", sub: "Synthwave / Outrun" },
+      { name: "C418 - Minecraft Volume Alpha", type: "artist", sub: "Cozy Ambient Game Soundtrack" },
       {
-        name: "Neuromancer (William Gibson)",
+        name: "Blood, Sweat, and Pixels",
         type: "book",
-        sub: "Sci-Fi Cyberpunk",
+        sub: "Indie Game Craft Stories",
       },
       {
-        name: "Akihabara Electric Town",
+        name: "Super Potato Retro Game Shop",
         type: "place",
-        sub: "Tech & Retro Arcade District",
+        sub: "Vintage Handheld & Cartridge Hub",
       },
     ],
   },
-  "brutalist architecture": {
-    hobby_title: "Urban 35mm Film Photography & Architectural Sketching",
+  "urban architecture": {
+    hobby_title: "Urban 35mm Film Photography & Architectural Fountain-Pen Sketching",
     category: "VISUAL ART / URBAN",
     difficulty: "BEGINNER",
     match_score: 95,
     description:
-      "Explore your city documenting bold concrete geometry, dramatic shadows, and monolithic structures using high-contrast black-and-white 35mm film.",
+      "Explore your neighborhood documenting sunlit facades, geometric shadows, and historic street corners using 35mm film and an ink sketchbook.",
     starter_kit: [
-      "Compact 35mm camera or B&W film app",
-      "Ilford HP5 400 Film Roll",
-      "Isometric dot-grid sketchbook",
+      "Compact 35mm camera or pocket sketchbook",
+      "Kodak Gold 200 or Ilford HP5 film roll",
+      "Waterproof fineliner pen + travel waterbrush",
     ],
-    qloo_queries: ["brutalism", "architecture", "photography", "minimalism"],
+    qloo_queries: ["architecture", "photography", "urban design", "minimalism"],
     fallback_entities: [
       {
-        name: "Barbican Centre",
+        name: "Barbican Centre & Conservatory",
         type: "place",
-        sub: "Iconic Brutalist Landmark",
+        sub: "Iconic Architectural Landmark",
       },
       {
-        name: "Andreas Gursky",
-        type: "artist",
-        sub: "Large Format Photography",
+        name: "Columbus (Kogonada)",
+        type: "movie",
+        sub: "Architectural Cinema Masterpiece",
       },
       {
-        name: "Towards a New Architecture (Le Corbusier)",
+        name: "The Eyes of the Skin (Juhani Pallasmaa)",
         type: "book",
-        sub: "Architecture Manifesto",
+        sub: "Sensory Architecture Essay",
       },
     ],
   },
   "lo-fi jazz": {
-    hobby_title: "Sampler Beatmaking & Vinyl Crate Digging",
+    hobby_title: "Sampler Beatmaking & Late-Night Vinyl Crate Digging",
     category: "MUSIC / CULTURE",
     difficulty: "BEGINNER",
     match_score: 96,
     description:
-      "Browse local record shops for 70s jazz samples, chop warm tape loops on a pocket sampler, and host cozy late-night listening sessions.",
+      "Browse local record shops for 70s jazz samples, chop warm tape loops on a pocket sampler, and host cozy listening sessions.",
     starter_kit: [
       "Pad controller or Koala Sampler app",
       "Entry-level turntable",
@@ -238,7 +238,7 @@ const AESTHETIC_HOBBY_MATRIX: Record<string, AestheticTemplate> = {
       "Closed Glass Terrariums, Flower Pressing & Botanical Journals",
     category: "NATURE / DESIGN",
     difficulty: "BEGINNER",
-    match_score: 96,
+    match_score: 98,
     description:
       "Create self-sustaining miniature ecosystems inside glass jars with live moss, volcanic stones, and pressed flowers while listening to warm ambient music.",
     starter_kit: [
@@ -262,10 +262,10 @@ const AESTHETIC_HOBBY_MATRIX: Record<string, AestheticTemplate> = {
     ],
   },
   "analog photography": {
-    hobby_title: "Solar Cyanotype Printing & Experimental Film Lab",
+    hobby_title: "Solar Cyanotype Printing & 35mm Film Scrapbooking",
     category: "ART / DARKROOM LAB",
     difficulty: "INTERMEDIATE",
-    match_score: 94,
+    match_score: 96,
     description:
       "Bring your digital screenshots into the physical world by printing negatives onto cotton paper using sunlight and Prussian-blue cyanotype chemistry.",
     starter_kit: [
@@ -278,7 +278,7 @@ const AESTHETIC_HOBBY_MATRIX: Record<string, AestheticTemplate> = {
       {
         name: "Wong Kar-wai",
         type: "movie",
-        sub: "Cinematic Color & Neon Mood",
+        sub: "Cinematic Color & Mood",
       },
       {
         name: "Vivian Maier",
@@ -292,62 +292,62 @@ const AESTHETIC_HOBBY_MATRIX: Record<string, AestheticTemplate> = {
       },
     ],
   },
-  "dark academia": {
+  "cozy reading": {
     hobby_title:
-      "Handcrafted Bookbinding, Fountain Pen Calligraphy & Classic Book Club",
-    category: "LITERATURE / CRAFT",
+      "Handcrafted Bookbinding, Fountain Pen Journaling & Indie Book Club",
+    category: "LITERATURE / PAPER CRAFT",
     difficulty: "BEGINNER",
-    match_score: 93,
+    match_score: 95,
     description:
-      "Sew your own exposed-spine journals with waxed linen thread, practice calligraphy with sepia ink, and explore historic libraries and cozy cafes.",
+      "Sew your own exposed-spine journals with waxed linen thread, practice fountain-pen lettering, and explore independent bookshops and cafes.",
     starter_kit: [
-      "Fountain pen + sepia ink",
-      "Waxed thread & bookbinding awl",
-      "120g ivory dot-grid paper",
+      "Fountain pen + warm sepia ink",
+      "Waxed linen thread & bookbinding awl",
+      "120g cream dot-grid paper",
     ],
-    qloo_queries: ["classical music", "literature", "philosophy", "museum"],
+    qloo_queries: ["literature", "bookshop", "classical music", "indie folk"],
     fallback_entities: [
-      {
-        name: "The Secret History (Donna Tartt)",
-        type: "book",
-        sub: "Dark Academia Essential",
-      },
-      {
-        name: "Max Richter",
-        type: "artist",
-        sub: "Neo-Classical / Post-Minimalism",
-      },
       {
         name: "Shakespeare and Company",
         type: "place",
         sub: "Historic Independent Bookstore",
       },
+      {
+        name: "Max Richter",
+        type: "artist",
+        sub: "Neo-Classical / Reading Soundtrack",
+      },
+      {
+        name: "84, Charing Cross Road (Helene Hanff)",
+        type: "book",
+        sub: "Bookshop Letters Classic",
+      },
     ],
   },
-  "indie sleaze": {
-    hobby_title: "Vinyl / CDJ Mixing & Underground Nightlife Zines",
-    category: "MUSIC / NIGHTLIFE",
-    difficulty: "INTERMEDIATE",
-    match_score: 95,
+  "indie cinema": {
+    hobby_title: "Super-8 / MiniDV Video Diaries, Storyboarding & Film Club Zines",
+    category: "CINEMA / STORYTELLING",
+    difficulty: "BEGINNER",
+    match_score: 96,
     description:
-      "Mix electro-clash, post-punk revival, and bloghouse tracks while documenting your local music scene with direct flash photography.",
+      "Shoot warm weekend video postcards with vintage camcorders or film emulation lenses, print frame-grab zines, and host backyard movie nights.",
     starter_kit: [
-      "2-channel DJ controller",
-      "Point-and-shoot camera with direct flash",
-      "Curated electro-indie playlist",
+      "Vintage camcorder or 16mm film app",
+      "Pocket storyboard notebook",
+      "Portable mini projector for movie nights",
     ],
-    qloo_queries: ["indie rock", "electroclash", "post-punk", "nightlife"],
+    qloo_queries: ["art house", "indie film", "cinematography", "soundtrack"],
     fallback_entities: [
       {
-        name: "LCD Soundsystem",
-        type: "artist",
-        sub: "Dance-Punk / Indie Electronic",
+        name: "Before Sunrise (Richard Linklater)",
+        type: "movie",
+        sub: "Indie Cinema Classic",
       },
-      { name: "Justice - Cross", type: "artist", sub: "French Electro" },
+      { name: "Air - Moon Safari", type: "artist", sub: "Cinematic Downtempo" },
       {
-        name: "Meet Me in the Bathroom",
+        name: "Sculpting in Time (Andrei Tarkovsky)",
         type: "book",
-        sub: "2000s Music Oral History",
+        sub: "Poetic Cinema Reflections",
       },
     ],
   },
@@ -577,7 +577,7 @@ export async function POST(req: NextRequest) {
   ).filter(Boolean);
 
   if (effectiveTags.length === 0) {
-    effectiveTags.push("botanical", "anime", "y2k retro");
+    effectiveTags.push("botanical", "ceramics & clay", "analog photography");
   }
 
   logs.push(`> ACTIVE AESTHETIC SIGNALS: ${effectiveTags.join(", ").toUpperCase()}`);
@@ -901,9 +901,9 @@ export async function POST(req: NextRequest) {
 
   const defaultCrossDomain: CulturalEntity[] = [
     {
-      name: "Daft Punk - Discovery",
+      name: "Plantasia (Mort Garson)",
       type: "artist",
-      sub: "French Touch / Y2K Electronic",
+      sub: "Warm Earth Music for Plants & Crafts",
     },
     {
       name: "Studio Ghibli / Spirited Away",
@@ -911,14 +911,14 @@ export async function POST(req: NextRequest) {
       sub: "Iconic Animation & Visual World",
     },
     {
-      name: "FRUiTS Magazine (Shoichi Aoki)",
+      name: "Braiding Sweetgrass (Robin Wall Kimmerer)",
       type: "book",
-      sub: "Harajuku Street Fashion Archive",
+      sub: "Botany, Craft & Slow Living",
     },
     {
-      name: "Harajuku Takeshita Street",
+      name: "Kew Royal Botanic Gardens",
       type: "place",
-      sub: "Pop Culture & Vintage District",
+      sub: "Historic Botanical Conservatory",
     },
   ];
 

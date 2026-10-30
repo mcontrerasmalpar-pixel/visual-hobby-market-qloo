@@ -52,15 +52,15 @@ interface FeedPost {
 
 const INITIAL_STICKERS = [
   "botanical",
-  "anime",
-  "kawaii pop",
-  "y2k retro",
+  "ceramics & clay",
   "analog photography",
   "lo-fi jazz",
-  "cyberpunk",
-  "brutalist architecture",
-  "dark academia",
-  "indie sleaze",
+  "anime & illustration",
+  "vintage vinyl",
+  "urban architecture",
+  "cozy reading",
+  "indie cinema",
+  "retro gaming",
 ];
 
 function rgbToHex(r: number, g: number, b: number): string {
@@ -151,7 +151,7 @@ export default function HomePage() {
         canvas.width = 32;
         canvas.height = 32;
         const ctx = canvas.getContext("2d");
-        let detectedTag = "y2k retro";
+        let detectedTag = "cozy aesthetic";
         let dominantHex = "#10B981";
         let paletteHexes: string[] = ["#BAE6FD", "#A7F3D0", "#FEF08A"];
 
@@ -210,16 +210,16 @@ export default function HomePage() {
             nameLow.includes("manga") ||
             nameLow.includes("ghibli")
           ) {
-            detectedTag = "anime";
+            detectedTag = "anime & illustration";
             dominantHex = "#60A5FA";
           } else if (
-            nameLow.includes("ilustracion") ||
-            nameLow.includes("toy") ||
-            nameLow.includes("kawaii") ||
+            nameLow.includes("ceramic") ||
+            nameLow.includes("clay") ||
+            nameLow.includes("craft") ||
             (brightness > 155 && (r > 150 || g > 150))
           ) {
-            detectedTag = "kawaii pop";
-            dominantHex = "#F472B6";
+            detectedTag = "ceramics & clay";
+            dominantHex = "#F59E0B";
           } else if (
             nameLow.includes("plant") ||
             nameLow.includes("flower") ||
@@ -228,20 +228,19 @@ export default function HomePage() {
             detectedTag = "botanical";
             dominantHex = "#10B981";
           } else if (
-            nameLow.includes("brutal") ||
             nameLow.includes("arch") ||
             (Math.abs(r - g) < 10 && Math.abs(g - b) < 10 && brightness < 150)
           ) {
-            detectedTag = "brutalist architecture";
+            detectedTag = "urban architecture";
             dominantHex = "#38BDF8";
           } else if (brightness < 75) {
-            detectedTag = "dark academia";
+            detectedTag = "cozy reading";
             dominantHex = "#A855F7";
           } else if (r > 140 && g > 110) {
-            detectedTag = "anime";
+            detectedTag = "analog photography";
             dominantHex = "#F59E0B";
           } else {
-            detectedTag = "y2k retro";
+            detectedTag = "botanical";
             dominantHex = "#38BDF8";
           }
         }
@@ -281,7 +280,7 @@ export default function HomePage() {
           id: `${file.name}-${Date.now()}`,
           name: file.name,
           previewUrl: url,
-          detectedTag: "y2k retro",
+          detectedTag: "botanical",
           dominantHex: "#38BDF8",
           paletteHexes: ["#BAE6FD", "#A7F3D0"],
         });
@@ -354,7 +353,9 @@ export default function HomePage() {
     imagesToAnalyze: UploadedImage[] = images
   ) {
     const effectiveTags =
-      tagsToQuery.length > 0 ? tagsToQuery : ["botanical", "anime", "y2k retro"];
+      tagsToQuery.length > 0
+        ? tagsToQuery
+        : ["botanical", "ceramics & clay", "analog photography"];
     setIsLoading(true);
     setHasUnlockedResults(true);
 
@@ -540,7 +541,7 @@ export default function HomePage() {
           <br />
           HOBBY MARKET
           <br />
-          EST. 2000 ★
+          TASTE AI ★
         </span>
       </div>
 
@@ -661,7 +662,7 @@ export default function HomePage() {
                               setImages([]);
                               setHasUnlockedResults(false);
                             }}
-                            className="text-xs font-extrabold text-[#E11D48] hover:underline"
+                            className="text-xs font-extrabold text-[#92400E] hover:underline"
                           >
                             🗑️ Take down all photos
                           </button>
@@ -894,17 +895,6 @@ export default function HomePage() {
                         </div>
                       )}
 
-                      <div className="flex flex-wrap justify-center gap-1.5">
-                        {selectedTags.map((t) => (
-                          <span
-                            key={t}
-                            className="text-xs font-extrabold bg-[#D1FAE5] text-[#065F46] border-2 border-[#4A3531] rounded-full px-3 py-0.5 uppercase"
-                          >
-                            🍀 {t}
-                          </span>
-                        ))}
-                      </div>
-
                       <div className="pt-1">
                         <button
                           type="button"
@@ -1056,38 +1046,22 @@ export default function HomePage() {
                               </ul>
                             </div>
 
-                            {/* Qloo Cultural Matches */}
-                            <div className="bg-[#E0F2FE]/60 border-2 border-[#4A3531] rounded-2xl p-3 space-y-2">
-                              <div className="flex items-center justify-between">
-                                <span className="text-xs font-extrabold text-[#4A3531] uppercase">
-                                  🎵 Qloo Cultural Picks:
-                                </span>
-                                <span className="text-xs font-extrabold bg-white text-[#4A3531] px-2 py-0.5 rounded-full border border-[#4A3531]">
-                                  Taste AI™
+                            {/* Single Paired Cultural Companion (full list lives in Section 03 Mixtape) */}
+                            {hobby.cultural_matches?.[0] && (
+                              <div className="bg-[#E0F2FE]/60 border-2 border-[#4A3531] rounded-2xl px-3 py-2 flex items-center justify-between gap-2 text-xs font-bold">
+                                <div className="truncate">
+                                  <span className="text-[#075985] font-extrabold uppercase block text-[10px]">
+                                    🎵 Paired Qloo Companion:
+                                  </span>
+                                  <span className="text-[#4A3531] font-extrabold">
+                                    {hobby.cultural_matches[0].name}
+                                  </span>
+                                </div>
+                                <span className="text-xs font-extrabold uppercase px-2 py-0.5 rounded-full bg-[#FEF08A] text-[#4A3531] border border-[#4A3531] shrink-0">
+                                  {hobby.cultural_matches[0].type}
                                 </span>
                               </div>
-
-                              <div className="space-y-1.5">
-                                {hobby.cultural_matches.map((m, idx) => (
-                                  <div
-                                    key={idx}
-                                    className="bg-white rounded-xl border border-[#4A3531] px-2.5 py-1.5 flex items-center justify-between text-xs font-bold"
-                                  >
-                                    <div className="truncate pr-2">
-                                      <span className="text-[#4A3531] font-extrabold">
-                                        {m.name}
-                                      </span>
-                                      <span className="text-[#4A3531]/70 text-xs block truncate">
-                                        {m.sub}
-                                      </span>
-                                    </div>
-                                    <span className="text-xs font-extrabold uppercase px-2 py-0.5 rounded-full bg-[#FEF08A] text-[#4A3531] border border-[#4A3531] shrink-0">
-                                      {m.type}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
+                            )}
                           </div>
 
                           <button

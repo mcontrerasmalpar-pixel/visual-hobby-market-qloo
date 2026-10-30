@@ -8,25 +8,18 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        y2k: {
-          bg: "#090a10",
-          panel: "#121420",
-          pink: "#ec4899",
-          cyan: "#22d3ee",
-          lime: "#4ade80",
+        market: {
+          cocoa: "#4A3531",
+          sky: "#E0F4FF",
+          meadow: "#9AE6B4",
+          butter: "#FEF08A",
+          mint: "#D1FAE5",
         },
       },
       fontFamily: {
-        mono: ["'Space Mono'", "'Courier New'", "monospace"],
-        pixel: ["'VT323'", "'Courier New'", "monospace"],
-      },
-      boxShadow: {
-        "y2k-pink": "6px 6px 0px #ec4899",
-        "y2k-cyan": "6px 6px 0px #22d3ee",
-        "y2k-lime": "6px 6px 0px #4ade80",
-        "y2k-sm-pink": "3px 3px 0px #ec4899",
-        "y2k-sm-cyan": "3px 3px 0px #22d3ee",
-        "y2k-sm-lime": "3px 3px 0px #4ade80",
+        display: ["'Fredoka'", "sans-serif"],
+        hand: ["'Gaegu'", "cursive"],
+        sans: ["'Quicksand'", "sans-serif"],
       },
     },
   },
