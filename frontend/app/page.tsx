@@ -92,6 +92,7 @@ export default function HomePage() {
   const [customTagInput, setCustomTagInput] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   // Interactive states for filters, copy card, and Judge Mode
   const [mixtapeFilter, setMixtapeFilter] = useState<string>("all");
@@ -302,6 +303,21 @@ export default function HomePage() {
     imagesToAnalyze: UploadedImage[] = images
   ) {
     setIsLoading(true);
+    setApiError(null);
+
+    // If user typed a tag into the input box without clicking "+ TAG", include it automatically
+    let finalManualTags = [...tagsToQuery];
+    const pendingTag = customTagInput.trim().toLowerCase();
+    if (pendingTag) {
+      if (!availableTags.includes(pendingTag)) {
+        setAvailableTags((prev) => [...prev, pendingTag]);
+      }
+      if (!finalManualTags.includes(pendingTag)) {
+        finalManualTags = [...finalManualTags, pendingTag];
+        setSelectedTags(finalManualTags);
+      }
+      setCustomTagInput("");
+    }
 
     try {
       const res = await fetch(`${getApiBase()}/api/recommendations`, {
@@ -309,7 +325,7 @@ export default function HomePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           // Only send the user's manually selected tags (never inject fixed visual tags from client)
-          tags: tagsToQuery,
+          tags: finalManualTags,
           images: imagesToAnalyze.map((img) => ({
             name: img.name,
             dataUrl: img.dataUrl || "",
@@ -325,7 +341,8 @@ export default function HomePage() {
       });
 
       if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
+        const errText = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status} ${errText.slice(0, 120)}`);
       }
 
       const data = await res.json();
@@ -381,10 +398,14 @@ export default function HomePage() {
       }
       setHasUnlockedResults(true);
     } catch (err) {
+      const msg = String(err);
+      setApiError(`Could not complete recommendation request: ${msg}`);
       setTerminalLogs((prev) => [
         ...prev,
-        `[!] Connect API at ${getApiBase() || "/api"}: ${String(err)}`,
+        `[!] Connect API at ${getApiBase() || "/api"}: ${msg}`,
       ]);
+      setHasUnlockedResults(true);
+      setShowJudgeLogs(true);
     } finally {
       setIsLoading(false);
     }
@@ -788,6 +809,21 @@ export default function HomePage() {
                             : "✨ Find My Hobbies! go go go !! →"}
                         </button>
                       </div>
+
+                      {isLoading && (
+                        <div className="bg-[#FEFCE8] border-2 border-dashed border-[#4A3531] rounded-2xl px-4 py-2.5 text-xs font-extrabold text-[#065F46] flex items-center justify-center gap-2 animate-pulse">
+                          <span>🔭</span>
+                          <span>
+                            Analyzing your photos with Claude Vision (claude-haiku-5-5) &amp; querying Qloo Taste AI (~8–12s)...
+                          </span>
+                        </div>
+                      )}
+
+                      {apiError && (
+                        <div className="bg-[#FEF3C7] border-2 border-[#4A3531] rounded-2xl px-4 py-2.5 text-xs font-extrabold text-[#92400E]">
+                          ⚠️ {apiError}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </Y2KWindow>

@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
+// Allow up to 60s execution time on Vercel Serverless Functions (default Hobby timeout is 10s without this)
+export const maxDuration = 60;
+
 const QLOO_BASE_URL = (
   process.env.QLOO_BASE_URL || "https://hackathon.api.qloo.com"
 ).replace(/\/$/, "");
@@ -19,9 +22,6 @@ interface InputImagePayload {
   dataUrl?: string;
   dominantHex?: string;
 }
-
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { z } = eval('require("next/dist/compiled/zod")');
 
 interface ClaudeVisionHobby {
   tag: string;
@@ -45,33 +45,123 @@ interface ClaudeVisionAnalysis {
   custom_hobbies: ClaudeVisionHobby[];
 }
 
-const VisualSignalsToolSchema = z.object({
-  tags: z.array(z.string().min(1)).min(1),
-  vibe_summary: z.string().min(5),
-  archetype: z.string().optional().default("VISUAL MARKET EXPLORER"),
-  per_image_captions: z.array(z.string()).optional().default([]),
-  qloo_seeds: z
-    .object({
-      tag_queries: z.array(z.string()).default([]),
-      entity_queries: z.array(z.string()).default([]),
-    })
-    .optional()
-    .default({ tag_queries: [], entity_queries: [] }),
-  custom_hobbies: z
-    .array(
-      z.object({
-        tag: z.string(),
-        title: z.string(),
-        category: z.string().optional().default("CREATIVE CRAFT"),
-        difficulty: z.string().optional().default("BEGINNER"),
-        match_score: z.number().optional().default(98),
-        description: z.string(),
-        starter_kit: z.array(z.string()).default([]),
-      })
-    )
-    .optional()
-    .default([]),
-});
+function validateVisualSignalsInput(rawInput: unknown): {
+  success: boolean;
+  data?: ClaudeVisionAnalysis;
+  issues?: unknown[];
+} {
+  // 1. Try Zod from Next.js compiled modules when available locally
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { z } = eval('require("next/dist/compiled/zod")');
+    const schema = z.object({
+      tags: z.array(z.string().min(1)).min(1),
+      vibe_summary: z.string().min(5),
+      archetype: z.string().optional().default("VISUAL MARKET EXPLORER"),
+      per_image_captions: z.array(z.string()).optional().default([]),
+      qloo_seeds: z
+        .object({
+          tag_queries: z.array(z.string()).default([]),
+          entity_queries: z.array(z.string()).default([]),
+        })
+        .optional()
+        .default({ tag_queries: [], entity_queries: [] }),
+      custom_hobbies: z
+        .array(
+          z.object({
+            tag: z.string(),
+            title: z.string(),
+            category: z.string().optional().default("CREATIVE CRAFT"),
+            difficulty: z.string().optional().default("BEGINNER"),
+            match_score: z.number().optional().default(98),
+            description: z.string(),
+            starter_kit: z.array(z.string()).default([]),
+          })
+        )
+        .optional()
+        .default([]),
+    });
+    const res = schema.safeParse(rawInput);
+    if (!res.success) {
+      return { success: false, issues: res.error.issues };
+    }
+    return { success: true, data: res.data };
+  } catch {
+    // 2. Fallback strict schema validation for Vercel Serverless runtime where next/dist/compiled/zod is not bundled
+    if (!rawInput || typeof rawInput !== "object") {
+      return { success: false, issues: [{ message: "Input is not an object" }] };
+    }
+    const obj = rawInput as Record<string, unknown>;
+    if (
+      !Array.isArray(obj.tags) ||
+      obj.tags.length === 0 ||
+      !obj.tags.every((t) => typeof t === "string" && t.trim().length > 0)
+    ) {
+      return {
+        success: false,
+        issues: [{ path: ["tags"], message: "tags must be a non-empty string[]" }],
+      };
+    }
+    if (typeof obj.vibe_summary !== "string" || obj.vibe_summary.trim().length < 5) {
+      return {
+        success: false,
+        issues: [
+          {
+            path: ["vibe_summary"],
+            message: "vibe_summary must be a string with at least 5 chars",
+          },
+        ],
+      };
+    }
+
+    const rawSeeds =
+      obj.qloo_seeds && typeof obj.qloo_seeds === "object"
+        ? (obj.qloo_seeds as Record<string, unknown>)
+        : {};
+    const rawHobbies = Array.isArray(obj.custom_hobbies)
+      ? obj.custom_hobbies
+      : [];
+
+    return {
+      success: true,
+      data: {
+        tags: obj.tags.map((t) => String(t).trim()),
+        vibe_summary: obj.vibe_summary.trim(),
+        archetype:
+          typeof obj.archetype === "string" && obj.archetype.trim()
+            ? obj.archetype.trim()
+            : "VISUAL MARKET EXPLORER",
+        per_image_captions: Array.isArray(obj.per_image_captions)
+          ? obj.per_image_captions.map((c) => String(c))
+          : [],
+        qloo_seeds: {
+          tag_queries: Array.isArray(rawSeeds.tag_queries)
+            ? rawSeeds.tag_queries.map((q) => String(q))
+            : [],
+          entity_queries: Array.isArray(rawSeeds.entity_queries)
+            ? rawSeeds.entity_queries.map((q) => String(q))
+            : [],
+        },
+        custom_hobbies: rawHobbies
+          .filter((h) => h && typeof h === "object")
+          .map((h) => {
+            const item = h as Record<string, unknown>;
+            return {
+              tag: String(item.tag || "CRAFT"),
+              title: String(item.title || "Creative Project"),
+              category: String(item.category || "CREATIVE CRAFT"),
+              difficulty: String(item.difficulty || "BEGINNER"),
+              match_score: Number(item.match_score) || 98,
+              description: String(item.description || ""),
+              starter_kit: Array.isArray(item.starter_kit)
+                ? item.starter_kit.map((s) => String(s))
+                : [],
+            };
+          }),
+      },
+    };
+  }
+}
 
 const VISUAL_SIGNALS_TOOL = {
   name: "visual_signals",
@@ -724,11 +814,11 @@ Inspect the user's ${validImages.length} uploaded visual inspiration image(s) (a
         continue;
       }
 
-      const validation = VisualSignalsToolSchema.safeParse(toolUseBlock.input);
-      if (!validation.success) {
+      const validation = validateVisualSignalsInput(toolUseBlock.input);
+      if (!validation.success || !validation.data) {
         logs.push(
           `  [!] Attempt ${attempt}: Zod validation failed on tool_use.input: ${JSON.stringify(
-            validation.error.issues
+            validation.issues
           ).slice(0, 140)}`
         );
         continue;
