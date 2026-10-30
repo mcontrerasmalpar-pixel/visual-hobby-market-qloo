@@ -210,21 +210,21 @@ export default function HomePage() {
           paletteHexes = Array.from(new Set([hexAvg, hexTop, hexBot]));
         }
 
-        // Create a compressed JPEG dataUrl (max 512px) for Claude Vision API
+        // Create a compact JPEG dataUrl (max 384px) for fast Claude Vision API ingestion
         let dataUrl = "";
         try {
-          const maxDim = 512;
+          const maxDim = 384;
           const scale = Math.min(
             1,
-            maxDim / Math.max(img.width || 512, img.height || 512)
+            maxDim / Math.max(img.width || 384, img.height || 384)
           );
           const vCanvas = document.createElement("canvas");
-          vCanvas.width = Math.max(1, Math.round((img.width || 512) * scale));
-          vCanvas.height = Math.max(1, Math.round((img.height || 512) * scale));
+          vCanvas.width = Math.max(1, Math.round((img.width || 384) * scale));
+          vCanvas.height = Math.max(1, Math.round((img.height || 384) * scale));
           const vCtx = vCanvas.getContext("2d");
           if (vCtx) {
             vCtx.drawImage(img, 0, 0, vCanvas.width, vCanvas.height);
-            dataUrl = vCanvas.toDataURL("image/jpeg", 0.75);
+            dataUrl = vCanvas.toDataURL("image/jpeg", 0.72);
           }
         } catch {
           // ignore if canvas tainted

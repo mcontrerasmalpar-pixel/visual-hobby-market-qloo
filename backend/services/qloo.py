@@ -248,9 +248,14 @@ async def analyze_with_claude_vision(
             })
 
     prompt_text = (
-        f"You are the Multimodal Visual-to-Semantic Bridge for 'Visual Hobby Market', a Qloo Hackathon application.\n"
-        f"Inspect the user's {len(valid_images)} uploaded image(s) (and optional tags: {', '.join(user_tags) or 'none'}) "
-        f"and call the 'visual_signals' tool with tags, vibe_summary, archetype, per_image_captions, qloo_seeds, and custom_hobbies."
+        f"Inspect the {len(valid_images)} uploaded image(s) (optional user tags: {', '.join(user_tags) or 'none'}) "
+        f"and call 'visual_signals'. Keep every string concise for fast generation:\n"
+        f"- tags: 4 specific visual aesthetic tags (1-3 words each).\n"
+        f"- vibe_summary: 2 concise sentences (max 35 words total) describing the visible lighting, textures, and mood.\n"
+        f"- archetype: 3-4 WORD PERSONA IN CAPS.\n"
+        f"- per_image_captions: 1 short caption (2-3 words) per image.\n"
+        f"- qloo_seeds: 3 tag_queries and 3 real entity_queries (artists, directors, movies, books, places).\n"
+        f"- custom_hobbies: 3 tactile hobbies tailored to the images (1 concise sentence description max 20 words, 3 short starter_kit items)."
     )
     content_blocks.append({"type": "text", "text": prompt_text})
 

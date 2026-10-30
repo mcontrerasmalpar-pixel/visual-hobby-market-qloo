@@ -166,7 +166,7 @@ function validateVisualSignalsInput(rawInput: unknown): {
 const VISUAL_SIGNALS_TOOL = {
   name: "visual_signals",
   description:
-    "Extracts structured visual aesthetic tags, a specific visual vibe summary, Qloo taxonomy seeds, and actionable hobbies from the user's uploaded images.",
+    "Extracts concise visual aesthetic tags, a 2-sentence vibe summary, Qloo taxonomy seeds, and 3 concise hobbies from the uploaded images.",
   input_schema: {
     type: "object",
     properties: {
@@ -174,22 +174,22 @@ const VISUAL_SIGNALS_TOOL = {
         type: "array",
         items: { type: "string" },
         description:
-          "4 to 6 specific visual aesthetic tags decoded directly from the uploaded images.",
+          "4 concise visual aesthetic tags (1-3 words each) decoded directly from the images.",
       },
       vibe_summary: {
         type: "string",
         description:
-          "2-sentence specific description of the lighting, textures, objects, and atmosphere across the uploaded images and how they translate into a lifestyle vibe.",
+          "Concise 2-sentence description (max 40 words total) of the lighting, textures, and objects across the images.",
       },
       archetype: {
         type: "string",
-        description: "3-5 WORD CREATIVE PERSONA IN CAPS",
+        description: "3-4 WORD CREATIVE PERSONA IN CAPS",
       },
       per_image_captions: {
         type: "array",
         items: { type: "string" },
         description:
-          "Short 2-4 word micro-vibe caption for each uploaded image in order.",
+          "Short 2-3 word micro-vibe caption for each uploaded image in order.",
       },
       qloo_seeds: {
         type: "object",
@@ -198,13 +198,13 @@ const VISUAL_SIGNALS_TOOL = {
             type: "array",
             items: { type: "string" },
             description:
-              "4 to 6 short genre/style/mood keywords for Qloo /v2/tags.",
+              "3 short genre/style/mood keywords (1-2 words each) for Qloo /v2/tags.",
           },
           entity_queries: {
             type: "array",
             items: { type: "string" },
             description:
-              "4 to 6 real cultural entities (artists, directors, movies, books, places) for Qloo /search.",
+              "3 real cultural entities (artists, directors, movies, books, places) for Qloo /search.",
           },
         },
         required: ["tag_queries", "entity_queries"],
@@ -215,17 +215,21 @@ const VISUAL_SIGNALS_TOOL = {
           type: "object",
           properties: {
             tag: { type: "string" },
-            title: { type: "string" },
+            title: { type: "string", description: "Short 3-6 word hobby title" },
             category: { type: "string" },
             difficulty: { type: "string" },
             match_score: {
               type: "number",
-              description: "Match percentage from 80 to 99",
+              description: "Match percentage from 85 to 99",
             },
-            description: { type: "string" },
+            description: {
+              type: "string",
+              description: "1 concise sentence (max 22 words)",
+            },
             starter_kit: {
               type: "array",
               items: { type: "string" },
+              description: "3 short items (2-4 words each)",
             },
           },
           required: [
@@ -599,6 +603,20 @@ async function resizeImageOnBackend(
     // Ignore dimension check error
   }
 
+  // Fast-path: if image is already compact (<=512px and <=80KB), skip re-encoding overhead (<1ms)
+  if (
+    width > 0 &&
+    height > 0 &&
+    width <= 512 &&
+    height <= 512 &&
+    inputBuffer.byteLength <= 80 * 1024
+  ) {
+    logs.push(
+      `  [BACKEND RESIZE] Image #${index + 1} verified (${width}x${height}, ${originalKb} KB, ${mediaType} <=512px)`
+    );
+    return { mediaType, base64Data };
+  }
+
   // 1. Try sharp (available in Vercel / standard Node production environments)
   try {
     const sharpModule = await eval('import("sharp")').catch(() => null);
@@ -606,7 +624,7 @@ async function resizeImageOnBackend(
       const resizedBuffer: Buffer = await sharpModule
         .default(inputBuffer)
         .resize(512, 512, { fit: "inside", withoutEnlargement: true })
-        .jpeg({ quality: 75 })
+        .jpeg({ quality: 72 })
         .toBuffer();
       const resizedKb = (resizedBuffer.byteLength / 1024).toFixed(1);
       logs.push(
@@ -641,7 +659,7 @@ async function resizeImageOnBackend(
         "raw = base64.b64decode(sys.stdin.read()); " +
         "img = Image.open(io.BytesIO(raw)).convert('RGB'); " +
         "img.thumbnail((512, 512)); " +
-        "out = io.BytesIO(); img.save(out, format='JPEG', quality=75, optimize=True); " +
+        "out = io.BytesIO(); img.save(out, format='JPEG', quality=72, optimize=True); " +
         "sys.stdout.write(base64.b64encode(out.getvalue()).decode('ascii'))";
       const resizedB64: string = execFileSync(pyBin, ["-c", pyScript], {
         input: base64Data,
@@ -690,18 +708,24 @@ async function analyzeWithClaudeVision(
     return { analysis: null, modelUsed: selectedModel };
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const contentBlocks: any[] = [];
-
-  for (let i = 0; i < validImages.length; i++) {
-    const parsed = parseDataUrl(validImages[i].dataUrl || "");
-    if (parsed) {
-      const resized = await resizeImageOnBackend(
+  // Resize/verify all uploaded images in parallel
+  const resizedImages = await Promise.all(
+    validImages.map(async (img, i) => {
+      const parsed = parseDataUrl(img.dataUrl || "");
+      if (!parsed) return null;
+      return resizeImageOnBackend(
         parsed.mediaType,
         parsed.base64Data,
         i,
         logs
       );
+    })
+  );
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const contentBlocks: any[] = [];
+  for (const resized of resizedImages) {
+    if (resized) {
       contentBlocks.push({
         type: "image",
         source: {
@@ -713,18 +737,15 @@ async function analyzeWithClaudeVision(
     }
   }
 
-  const promptText = `You are the Multimodal Visual-to-Semantic Bridge for "Visual Hobby Market", a Qloo Hackathon application.
-Inspect the user's ${validImages.length} uploaded visual inspiration image(s) (and their optional selected tags: ${
+  const promptText = `Inspect the ${validImages.length} uploaded image(s) (optional user tags: ${
     userTags.join(", ") || "none"
-  }) and call the "visual_signals" tool with:
-1. tags: 4 to 6 specific visual aesthetic tags decoded directly from the uploaded images.
-2. vibe_summary: 2-sentence specific description of the lighting, textures, objects, and atmosphere across the uploaded images and how they translate into a lifestyle vibe.
-3. archetype: 3-5 WORD CREATIVE PERSONA IN CAPS.
-4. per_image_captions: short 2-4 word micro-vibe caption for each uploaded image.
-5. qloo_seeds:
-   - tag_queries: 4 to 6 short genre/style/mood keywords for Qloo's /v2/tags endpoint.
-   - entity_queries: 4 to 6 real, well-known cultural entities (musical artists, film directors, movies, books, or iconic places) for Qloo's /search endpoint.
-6. custom_hobbies: 3 specific, hands-on, actionable real-world hobbies tailored directly to the visual details in these images, each with 3 concrete starter_kit items.`;
+  }) and call "visual_signals". Keep every string concise for fast generation:
+- tags: 4 specific visual aesthetic tags (1-3 words each).
+- vibe_summary: 2 concise sentences (max 35 words total) describing the visible lighting, textures, and mood.
+- archetype: 3-4 WORD PERSONA IN CAPS.
+- per_image_captions: 1 short caption (2-3 words) per image.
+- qloo_seeds: 3 tag_queries and 3 real entity_queries (artists, directors, movies, books, places).
+- custom_hobbies: 3 tactile hobbies tailored to the images (1 concise sentence description max 20 words, 3 short starter_kit items).`;
 
   contentBlocks.push({
     type: "text",
@@ -734,12 +755,12 @@ Inspect the user's ${validImages.length} uploaded visual inspiration image(s) (a
   // 25s timeout for Vision + 1 single retry (maxAttempts = 2), NO temperature parameter.
   // Note: claude-haiku-5-5 enables Extended Thinking by default, which previously consumed all 900 max_tokens
   // inside a "thinking" block (stop_reason="max_tokens") before emitting output.
-  // We pass both thinking: { type: "disabled" } (thinking_tokens=0) AND max_tokens: 2500 + forced tool_choice
-  // so the complete structured "visual_signals" tool_use payload (~1200-1400 tokens) is always returned cleanly.
+  // We pass both thinking: { type: "disabled" } (thinking_tokens=0) AND max_tokens: 2500 + forced tool_choice.
   const maxAttempts = 2;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 25000);
+    const t0 = Date.now();
     try {
       logs.push(
         `> [CLAUDE VISION] Attempt ${attempt}/${maxAttempts}: Sending ${validImages.length} image(s) to Anthropic (${selectedModel}, tool_choice=visual_signals, thinking=disabled, max_tokens=2500, timeout=25s)...`
@@ -767,11 +788,12 @@ Inspect the user's ${validImages.length} uploaded visual inspiration image(s) (a
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
+      const elapsedMs = Date.now() - t0;
 
       if (!resp.ok) {
         const errText = await resp.text();
         logs.push(
-          `  [!] Claude API (${selectedModel}) returned HTTP ${resp.status}: ${errText.slice(
+          `  [!] Claude API (${selectedModel}) returned HTTP ${resp.status} in ${elapsedMs}ms: ${errText.slice(
             0,
             140
           )}`
@@ -793,7 +815,7 @@ Inspect the user's ${validImages.length} uploaded visual inspiration image(s) (a
         data?.usage?.output_tokens_details?.thinking_tokens ?? 0;
 
       logs.push(
-        `  [CLAUDE RAW] Attempt ${attempt}: stop_reason="${stopReason}", block_types=${JSON.stringify(
+        `  [CLAUDE RAW] Attempt ${attempt} (${elapsedMs}ms): stop_reason="${stopReason}", block_types=${JSON.stringify(
           blockTypes
         )}, output_tokens=${outputTokens} (thinking_tokens=${thinkingTokens})`
       );
@@ -971,13 +993,13 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const uniqueTagTerms = Array.from(new Set(tagSearchTerms)).slice(0, 3);
-    const uniqueEntityTerms = Array.from(new Set(entitySearchTerms)).slice(0, 3);
+    const uniqueTagTerms = Array.from(new Set(tagSearchTerms)).slice(0, 2);
+    const uniqueEntityTerms = Array.from(new Set(entitySearchTerms)).slice(0, 2);
 
     const tagUrns: string[] = [];
     const entityIds: string[] = [];
 
-    // 1A & 1B IN PARALLEL: Resolve Qloo Tag URNs (/v2/tags) and Entity IDs (/search) simultaneously!
+    // 1A & 1B IN PARALLEL: Resolve Qloo Tag URNs (/v2/tags) and Entity IDs (/search) simultaneously with 5s timeout!
     await Promise.all([
       ...uniqueTagTerms.map(async (term) => {
         try {
@@ -985,7 +1007,10 @@ export async function POST(req: NextRequest) {
             term
           )}&take=2`;
           logs.push(`> GET ${tagUrl}`);
-          const tagResp = await fetch(tagUrl, { headers });
+          const tagResp = await fetch(tagUrl, {
+            headers,
+            signal: AbortSignal.timeout(5000),
+          });
           if (tagResp.ok) {
             const data = await tagResp.json();
             const results = data?.results?.tags || data?.results || [];
@@ -1000,7 +1025,7 @@ export async function POST(req: NextRequest) {
             }
           }
         } catch {
-          // continue
+          // continue on individual tag timeout
         }
       }),
       ...uniqueEntityTerms.map(async (term) => {
@@ -1009,7 +1034,10 @@ export async function POST(req: NextRequest) {
             term
           )}&take=2`;
           logs.push(`> GET ${searchUrl}`);
-          const sResp = await fetch(searchUrl, { headers });
+          const sResp = await fetch(searchUrl, {
+            headers,
+            signal: AbortSignal.timeout(5000),
+          });
           if (sResp.ok) {
             const sdata = await sResp.json();
             const sresults = sdata?.results || [];
@@ -1028,12 +1056,12 @@ export async function POST(req: NextRequest) {
             }
           }
         } catch {
-          // continue
+          // continue on individual search timeout
         }
       }),
     ]);
 
-    // Step 2 IN PARALLEL: Query Qloo /v2/insights across all 4 entityTypes simultaneously!
+    // Step 2 IN PARALLEL: Query Qloo /v2/insights across all 4 entityTypes simultaneously with 5.5s timeout!
     if (tagUrns.length > 0 || entityIds.length > 0) {
       await Promise.all(
         entityTypes.map(async (etype) => {
@@ -1057,7 +1085,10 @@ export async function POST(req: NextRequest) {
 
             const insightsUrl = `${QLOO_BASE_URL}/v2/insights?${params.toString()}`;
             logs.push(`> GET ${QLOO_BASE_URL}/v2/insights?filter.type=${etype}`);
-            const resp = await fetch(insightsUrl, { headers });
+            const resp = await fetch(insightsUrl, {
+              headers,
+              signal: AbortSignal.timeout(5500),
+            });
             if (resp.ok) {
               const payload = await resp.json();
               const entities =
@@ -1085,7 +1116,7 @@ export async function POST(req: NextRequest) {
               }
             }
           } catch {
-            // continue
+            logs.push(`  [!] Qloo /v2/insights (${etype}) timed out after 5.5s, skipping category.`);
           }
         })
       );
