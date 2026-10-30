@@ -1,0 +1,89 @@
+@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Gaegu:wght@400;700&family=Quicksand:wght@600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --cocoa: #4A3531;
+  --sky-top: #E0F4FF;
+  --meadow-bot: #9AE6B4;
+}
+
+body {
+  background: linear-gradient(
+    180deg,
+    #E0F4FF 0%,
+    #EBF8FF 52%,
+    #C6F6D5 82%,
+    #9AE6B4 100%
+  );
+  background-attachment: fixed;
+  color: #4A3531;
+  font-family: 'Quicksand', sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Soft Blue Gingham Cloud Container (inspired by Pet Paradise) */
+.gingham-cloud-card {
+  background-color: #FFFFFF;
+  background-image:
+    linear-gradient(90deg, rgba(186, 230, 253, 0.38) 50%, transparent 50%),
+    linear-gradient(rgba(186, 230, 253, 0.38) 50%, transparent 50%);
+  background-size: 28px 28px;
+  border: 3px solid #4A3531;
+  border-radius: 36px;
+  box-shadow: 0 8px 0 rgba(74, 53, 49, 0.14);
+}
+
+/* Puffy Cloud Halo Title (inspired by Figure 8 Market & Pet Paradise) */
+.cozy-cloud-title {
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 700;
+  color: #4A3531;
+  text-shadow:
+    -3px -3px 0 #FFFFFF,
+     3px -3px 0 #FFFFFF,
+    -3px  3px 0 #FFFFFF,
+     3px  3px 0 #FFFFFF,
+     0px  5px 0 #7DD3FC;
+}
+
+.cozy-subtitle {
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 700;
+}
+
+.handwritten-note {
+  font-family: 'Gaegu', cursive;
+  font-weight: 700;
+}
+
+/* Wooden Clothespin for hanging photos on the clothesline */
+.wooden-clothespin {
+  width: 12px;
+  height: 26px;
+  background: linear-gradient(180deg, #E6B17E 0%, #D09458 100%);
+  border: 2px solid #4A3531;
+  border-radius: 4px;
+  box-shadow: 1px 2px 0 rgba(74, 53, 49, 0.25);
+}
+
+/* Soft pill button with warm cocoa outline */
+.cozy-pill-btn {
+  border-radius: 9999px;
+  border: 2.5px solid #4A3531;
+  box-shadow: 0 3px 0 #4A3531;
+  transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+
+.cozy-pill-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 0 #4A3531;
+}
+
+.cozy-pill-btn:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 0 #4A3531;
+}
