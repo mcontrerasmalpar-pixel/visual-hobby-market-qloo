@@ -296,16 +296,6 @@ export default function HomePage() {
     const processed = await Promise.all(filesArray.map(analyzeImageFile));
     const combined = [...images, ...processed].slice(-4);
     setImages(combined);
-
-    const newDetected = processed.map((img) => img.detectedTag);
-    setAvailableTags((prev) => Array.from(new Set([...prev, ...newDetected])));
-
-    const extracted = Array.from(
-      new Set([...newDetected, ...selectedTags])
-    ).slice(0, 5);
-    setSelectedTags(extracted);
-
-    await fetchRecommendations(extracted, combined);
   }
 
   function handleRemoveImage(idToRemove: string) {
@@ -323,12 +313,9 @@ export default function HomePage() {
       ? selectedTags.filter((t) => t !== tag)
       : [...selectedTags, tag];
     setSelectedTags(updated);
-    if (hasUnlockedResults && updated.length > 0) {
-      fetchRecommendations(updated, images);
-    }
   }
 
-  async function handleAddCustomTag(e: React.FormEvent) {
+  function handleAddCustomTag(e: React.FormEvent) {
     e.preventDefault();
     const clean = customTagInput.trim().toLowerCase();
     if (!clean) return;
@@ -342,10 +329,6 @@ export default function HomePage() {
       : [...selectedTags, clean];
     setSelectedTags(nextSelected);
     setCustomTagInput("");
-
-    if (hasUnlockedResults) {
-      await fetchRecommendations(nextSelected, images);
-    }
   }
 
   async function fetchRecommendations(
