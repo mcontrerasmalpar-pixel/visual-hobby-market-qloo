@@ -732,7 +732,7 @@ export async function POST(req: NextRequest) {
                       props?.short_description ||
                       props?.address ||
                       item?.disambiguation ||
-                      `Qloo Taste Match ({shortType.toUpperCase()})`,
+                      `Qloo Taste Match (${shortType.toUpperCase()})`,
                     affinity: 95,
                     source: "qloo_live",
                   });
