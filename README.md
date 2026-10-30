@@ -79,7 +79,7 @@ Copy [`.env.example`](.env.example) to `.env` (and `frontend/.env.local` for loc
 QLOO_API_KEY=your_qloo_hackathon_api_key_here
 QLOO_BASE_URL=https://hackathon.api.qloo.com
 ANTHROPIC_API_KEY=your_anthropic_claude_api_key_here
-CLAUDE_MODEL=claude-sonnet-4-20250514
+CLAUDE_MODEL=claude-haiku-5-5
 ```
 
 ### 2. Run Locally (Next.js 14 Full-Stack App)

@@ -384,13 +384,13 @@ async function analyzeWithClaudeVision(
   }
 
   const preferredModel =
-    process.env.CLAUDE_MODEL || "claude-sonnet-4-20250514";
+    process.env.CLAUDE_MODEL || "claude-haiku-5-5";
   const candidateModels = Array.from(
     new Set([
       preferredModel,
-      "claude-sonnet-4-20250514",
-      "claude-3-5-sonnet-latest",
-      "claude-3-haiku-20240307",
+      "claude-haiku-5-5",
+      "claude-sonnet-5-5",
+      "claude-sonnet-4-6",
     ])
   );
 
@@ -455,7 +455,7 @@ Return ONLY valid JSON matching this exact structure (no markdown fences, no ext
         `> [CLAUDE VISION] Sending ${validImages.length} image(s) to Anthropic (${model})...`
       );
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
       const resp = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
