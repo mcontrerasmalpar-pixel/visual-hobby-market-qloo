@@ -103,6 +103,11 @@ export default function HomePage() {
     "Hang your favorite screenshots on the clothesline above or pick your aesthetic stickers to unlock cozy hobbies and cultural picks powered by Claude Vision & Qloo!"
   );
   const [visionMode, setVisionMode] = useState<string>("READY");
+  const [signalSource, setSignalSource] = useState<"CLAUDE_VISION" | "FALLBACK">(
+    "FALLBACK"
+  );
+  const [claudeModelUsed, setClaudeModelUsed] =
+    useState<string>("claude-haiku-5-5");
   const [qlooMode, setQlooMode] = useState<string>("QLOO_READY");
   const [qlooSeeds, setQlooSeeds] = useState<{
     tag_queries: string[];
@@ -245,13 +250,13 @@ export default function HomePage() {
           }
         }
 
-        // Also create a compressed JPEG dataUrl (max 768px) for Claude Vision API
+        // Also create a compressed JPEG dataUrl (max 512px) for Claude Vision API
         let dataUrl = "";
         try {
-          const maxDim = 768;
+          const maxDim = 512;
           const scale = Math.min(
             1,
-            maxDim / Math.max(img.width || 768, img.height || 768)
+            maxDim / Math.max(img.width || 512, img.height || 512)
           );
           const vCanvas = document.createElement("canvas");
           vCanvas.width = Math.max(1, Math.round((img.width || 512) * scale));
@@ -259,7 +264,7 @@ export default function HomePage() {
           const vCtx = vCanvas.getContext("2d");
           if (vCtx) {
             vCtx.drawImage(img, 0, 0, vCanvas.width, vCanvas.height);
-            dataUrl = vCanvas.toDataURL("image/jpeg", 0.8);
+            dataUrl = vCanvas.toDataURL("image/jpeg", 0.75);
           }
         } catch {
           // ignore if canvas tainted
@@ -368,7 +373,11 @@ export default function HomePage() {
       const data = await res.json();
       setArchetype(data.aesthetic_dna?.archetype || "COZY INDIE EXPLORER");
       setVibeSummary(data.aesthetic_dna?.vibe_summary || "");
-      setVisionMode(data.vision_mode || "CANVAS_HEURISTIC");
+      setVisionMode(data.vision_mode || "FALLBACK_HEURISTIC");
+      setSignalSource(
+        data.signal_source === "CLAUDE_VISION" ? "CLAUDE_VISION" : "FALLBACK"
+      );
+      setClaudeModelUsed(data.claude_model_used || "claude-haiku-5-5");
       setQlooMode(data.qloo_mode || "QLOO_LIVE");
       if (data.aesthetic_dna?.qloo_seeds) {
         setQlooSeeds(data.aesthetic_dna.qloo_seeds);
@@ -820,9 +829,9 @@ export default function HomePage() {
                     title="02. Your Cozy Vibe Check"
                     accent="lime"
                     badge={
-                      visionMode === "CLAUDE_VISION_LIVE"
-                        ? "CLAUDE VISION + QLOO"
-                        : "UNLOCKED"
+                      signalSource === "CLAUDE_VISION"
+                        ? `CLAUDE (${claudeModelUsed})`
+                        : "FALLBACK SIGNALS"
                     }
                     sticker="🍀"
                   >
@@ -837,14 +846,20 @@ export default function HomePage() {
                       </div>
 
                       <div className="text-left bg-white/95 p-3.5 rounded-2xl border-2 border-dashed border-[#4A3531] space-y-1.5">
-                        <div className="flex items-center justify-between">
+                        <div className="flex flex-wrap items-center justify-between gap-1">
                           <span className="text-xs font-extrabold text-[#047857] uppercase">
                             🔭 Visual Reading (Input Bridge):
                           </span>
-                          <span className="text-[11px] font-extrabold bg-[#E0F2FE] text-[#075985] px-2 py-0.5 rounded-full border border-[#4A3531]">
-                            {visionMode === "CLAUDE_VISION_LIVE"
-                              ? "Claude Vision AI"
-                              : "Visual DNA"}
+                          <span
+                            className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-full border border-[#4A3531] ${
+                              signalSource === "CLAUDE_VISION"
+                                ? "bg-[#D1FAE5] text-[#065F46]"
+                                : "bg-[#FEF3C7] text-[#92400E]"
+                            }`}
+                          >
+                            {signalSource === "CLAUDE_VISION"
+                              ? `🟢 Source: Claude (${claudeModelUsed})`
+                              : "🟠 Source: Fallback Heuristic"}
                           </span>
                         </div>
                         <p className="text-xs sm:text-sm font-bold text-[#4A3531] leading-relaxed">
@@ -856,8 +871,15 @@ export default function HomePage() {
                       {(qlooSeeds.entity_queries.length > 0 ||
                         qlooSeeds.tag_queries.length > 0) && (
                         <div className="text-left bg-[#E0F2FE]/60 border-2 border-[#4A3531] rounded-2xl p-3 space-y-1.5">
-                          <div className="text-xs font-extrabold text-[#4A3531] uppercase">
-                            🎯 Translated Seeds for Qloo Taxonomy:
+                          <div className="flex flex-wrap items-center justify-between gap-1">
+                            <span className="text-xs font-extrabold text-[#4A3531] uppercase">
+                              🎯 Seeds for Qloo Taxonomy:
+                            </span>
+                            <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-white text-[#4A3531] border border-[#4A3531]">
+                              {signalSource === "CLAUDE_VISION"
+                                ? "Translated by Claude Vision"
+                                : "From Local Tag Fallback"}
+                            </span>
                           </div>
                           {qlooSeeds.entity_queries.length > 0 && (
                             <div className="text-xs font-bold text-[#4A3531]">
@@ -1069,9 +1091,7 @@ export default function HomePage() {
                   >
                     {showJudgeLogs
                       ? "🔼 Hide Qloo API Technical Log (Judge Mode)"
-                      : "🔍 Hackathon Judge Mode: View Qloo API Technical Log (" +
-                        qlooMode +
-                        ")"}
+                      : `🔍 Hackathon Judge Mode: Signals=[${signalSource}] • Qloo=[${qlooMode}]`}
                   </button>
 
                   {showJudgeLogs && (

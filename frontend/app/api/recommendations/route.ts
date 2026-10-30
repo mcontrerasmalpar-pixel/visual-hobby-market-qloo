@@ -369,43 +369,135 @@ function parseDataUrl(dataUrl: string): {
   };
 }
 
+async function resizeImageOnBackend(
+  mediaType: string,
+  base64Data: string,
+  index: number,
+  logs: string[]
+): Promise<{ mediaType: string; base64Data: string }> {
+  const inputBuffer = Buffer.from(base64Data, "base64");
+  const originalKb = (inputBuffer.byteLength / 1024).toFixed(1);
+
+  let width = 0;
+  let height = 0;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const sizeOf = eval('require("next/dist/compiled/image-size")');
+    const dims = sizeOf(inputBuffer);
+    width = dims?.width || 0;
+    height = dims?.height || 0;
+  } catch {
+    // Ignore dimension check error
+  }
+
+  // 1. Try sharp (available in Vercel / standard Node production environments)
+  try {
+    const sharpModule = await eval('import("sharp")').catch(() => null);
+    if (sharpModule && sharpModule.default) {
+      const resizedBuffer: Buffer = await sharpModule
+        .default(inputBuffer)
+        .resize(512, 512, { fit: "inside", withoutEnlargement: true })
+        .jpeg({ quality: 75 })
+        .toBuffer();
+      const resizedKb = (resizedBuffer.byteLength / 1024).toFixed(1);
+      logs.push(
+        `  [BACKEND RESIZE] Image #${index + 1}: ${originalKb} KB -> ${resizedKb} KB (<=512px JPEG via sharp)`
+      );
+      return {
+        mediaType: "image/jpeg",
+        base64Data: resizedBuffer.toString("base64"),
+      };
+    }
+  } catch {
+    // Fallback if sharp binary not present locally
+  }
+
+  // 2. If image exceeds 512px or 80KB and sharp isn't installed locally, resize via Python Pillow if available
+  if (width > 512 || height > 512 || inputBuffer.byteLength > 80 * 1024) {
+    try {
+      const { execFileSync } = eval('require("child_process")');
+      const path = eval('require("path")');
+      const fs = eval('require("fs")');
+      const venvPy = path.resolve(
+        process.cwd(),
+        "..",
+        "backend",
+        "venv",
+        "Scripts",
+        "python.exe"
+      );
+      const pyBin = fs.existsSync(venvPy) ? venvPy : "python";
+      const pyScript =
+        "import sys, base64, io; from PIL import Image; " +
+        "raw = base64.b64decode(sys.stdin.read()); " +
+        "img = Image.open(io.BytesIO(raw)).convert('RGB'); " +
+        "img.thumbnail((512, 512)); " +
+        "out = io.BytesIO(); img.save(out, format='JPEG', quality=75, optimize=True); " +
+        "sys.stdout.write(base64.b64encode(out.getvalue()).decode('ascii'))";
+      const resizedB64: string = execFileSync(pyBin, ["-c", pyScript], {
+        input: base64Data,
+        encoding: "utf-8",
+        timeout: 4000,
+      });
+      if (resizedB64 && resizedB64.length > 50) {
+        const resizedKb = ((resizedB64.length * 0.75) / 1024).toFixed(1);
+        logs.push(
+          `  [BACKEND RESIZE] Image #${index + 1} (${width}x${height}): ${originalKb} KB -> ${resizedKb} KB (<=512px JPEG)`
+        );
+        return {
+          mediaType: "image/jpeg",
+          base64Data: resizedB64.trim(),
+        };
+      }
+    } catch {
+      // Continue with existing buffer if Python/Pillow unavailable
+    }
+  }
+
+  const dimLabel = width && height ? `${width}x${height}, ` : "";
+  logs.push(
+    `  [BACKEND RESIZE] Image #${index + 1} verified (${dimLabel}${originalKb} KB, ${mediaType} <=512px)`
+  );
+  return { mediaType, base64Data };
+}
+
 async function analyzeWithClaudeVision(
   images: InputImagePayload[],
   userTags: string[],
   anthropicKey: string,
   logs: string[]
-): Promise<ClaudeVisionAnalysis | null> {
+): Promise<{ analysis: ClaudeVisionAnalysis | null; modelUsed: string }> {
   const validImages = images
     .filter((img) => img.dataUrl && img.dataUrl.startsWith("data:image/"))
     .slice(0, 4);
 
-  if (validImages.length === 0 && userTags.length === 0) {
-    return null;
-  }
+  // 1 single default model (claude-haiku-5-5); sonnet is only used if explicitly configured in CLAUDE_MODEL
+  const selectedModel = (
+    process.env.CLAUDE_MODEL || "claude-haiku-5-5"
+  ).trim();
 
-  const preferredModel =
-    process.env.CLAUDE_MODEL || "claude-haiku-5-5";
-  const candidateModels = Array.from(
-    new Set([
-      preferredModel,
-      "claude-haiku-5-5",
-      "claude-sonnet-5-5",
-      "claude-sonnet-4-6",
-    ])
-  );
+  if (validImages.length === 0 && userTags.length === 0) {
+    return { analysis: null, modelUsed: selectedModel };
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const contentBlocks: any[] = [];
 
-  for (const img of validImages) {
-    const parsed = parseDataUrl(img.dataUrl || "");
+  for (let i = 0; i < validImages.length; i++) {
+    const parsed = parseDataUrl(validImages[i].dataUrl || "");
     if (parsed) {
+      const resized = await resizeImageOnBackend(
+        parsed.mediaType,
+        parsed.base64Data,
+        i,
+        logs
+      );
       contentBlocks.push({
         type: "image",
         source: {
           type: "base64",
-          media_type: parsed.mediaType,
-          data: parsed.base64Data,
+          media_type: resized.mediaType,
+          data: resized.base64Data,
         },
       });
     }
@@ -449,13 +541,15 @@ Return ONLY valid JSON matching this exact structure (no markdown fences, no ext
     text: promptText,
   });
 
-  for (const model of candidateModels) {
+  // 25s timeout for Vision + 1 single retry (maxAttempts = 2), NO temperature parameter
+  const maxAttempts = 2;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
     try {
       logs.push(
-        `> [CLAUDE VISION] Sending ${validImages.length} image(s) to Anthropic (${model})...`
+        `> [CLAUDE VISION] Attempt ${attempt}/${maxAttempts}: Sending ${validImages.length} image(s) to Anthropic (${selectedModel}, timeout=25s)...`
       );
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
       const resp = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
@@ -464,9 +558,8 @@ Return ONLY valid JSON matching this exact structure (no markdown fences, no ext
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          model,
+          model: selectedModel,
           max_tokens: 900,
-          temperature: 0.4,
           messages: [
             {
               role: "user",
@@ -481,13 +574,13 @@ Return ONLY valid JSON matching this exact structure (no markdown fences, no ext
       if (!resp.ok) {
         const errText = await resp.text();
         logs.push(
-          `  [!] Claude API (${model}) returned HTTP ${resp.status}: ${errText.slice(
+          `  [!] Claude API (${selectedModel}) returned HTTP ${resp.status}: ${errText.slice(
             0,
-            90
+            110
           )}`
         );
-        // If authentication error (401/403), do not retry other models
-        if (resp.status === 401 || resp.status === 403) {
+        // Do not retry on client/auth/model errors (4xx except 429)
+        if (resp.status >= 400 && resp.status < 500 && resp.status !== 429) {
           break;
         }
         continue;
@@ -507,7 +600,7 @@ Return ONLY valid JSON matching this exact structure (no markdown fences, no ext
 
       const parsed = JSON.parse(jsonMatch[0]) as ClaudeVisionAnalysis;
       logs.push(
-        `  [OK] Claude Vision decoded archetype: "${parsed.archetype}"`
+        `  [OK] [SIGNAL SOURCE: CLAUDE_VISION (${selectedModel})] Decoded archetype: "${parsed.archetype}"`
       );
       logs.push(
         `  [OK] Claude -> Qloo Tag Seeds: ${(
@@ -519,13 +612,18 @@ Return ONLY valid JSON matching this exact structure (no markdown fences, no ext
           parsed.qloo_seeds?.entity_queries || []
         ).join(", ")}`
       );
-      return parsed;
+      return { analysis: parsed, modelUsed: selectedModel };
     } catch (err) {
-      logs.push(`  [!] Claude Vision error (${model}): ${String(err).slice(0, 80)}`);
+      clearTimeout(timeoutId);
+      logs.push(
+        `  [!] Claude Vision attempt ${attempt}/${maxAttempts} failed (${selectedModel}): ${String(
+          err
+        ).slice(0, 80)}`
+      );
     }
   }
 
-  return null;
+  return { analysis: null, modelUsed: selectedModel };
 }
 
 export async function POST(req: NextRequest) {
@@ -548,31 +646,42 @@ export async function POST(req: NextRequest) {
     .filter(Boolean);
 
   const logs: string[] = [
-    "> INITIALIZING VISUAL_HOBBY_MARKET ENGINE v3.0 (CLAUDE VISION + QLOO TASTE AI)...",
+    "> INITIALIZING VISUAL_HOBBY_MARKET ENGINE v3.1 (CLAUDE VISION + QLOO TASTE AI)...",
     `> TARGET QLOO GATEWAY: ${QLOO_BASE_URL}`,
   ];
 
   const anthropicKey = (process.env.ANTHROPIC_API_KEY || "").trim();
   let claudeAnalysis: ClaudeVisionAnalysis | null = null;
-  let visionMode = "CANVAS_HEURISTIC";
+  let claudeModelUsed = (
+    process.env.CLAUDE_MODEL || "claude-haiku-5-5"
+  ).trim();
+  let visionMode = "FALLBACK_HEURISTIC";
+  let signalSource: "CLAUDE_VISION" | "FALLBACK" = "FALLBACK";
 
   if (
     anthropicKey &&
     anthropicKey !== "your_anthropic_claude_api_key_here" &&
     (rawImages.length > 0 || cleanTags.length > 0)
   ) {
-    claudeAnalysis = await analyzeWithClaudeVision(
+    const resVision = await analyzeWithClaudeVision(
       rawImages,
       cleanTags,
       anthropicKey,
       logs
     );
+    claudeAnalysis = resVision.analysis;
+    claudeModelUsed = resVision.modelUsed;
     if (claudeAnalysis) {
       visionMode = "CLAUDE_VISION_LIVE";
+      signalSource = "CLAUDE_VISION";
+    } else {
+      logs.push(
+        `> [SIGNAL SOURCE: FALLBACK_HEURISTIC] Claude Vision (${claudeModelUsed}) did not return analysis -> Using fallback aesthetic signals.`
+      );
     }
-  } else if (rawImages.length > 0) {
+  } else {
     logs.push(
-      "> [NOTICE] ANTHROPIC_API_KEY not set -> Using local Color DNA + tag heuristics (Add ANTHROPIC_API_KEY for Claude Vision)."
+      "> [SIGNAL SOURCE: FALLBACK_HEURISTIC] ANTHROPIC_API_KEY not configured -> Using fallback aesthetic signals."
     );
   }
 
@@ -944,15 +1053,22 @@ export async function POST(req: NextRequest) {
   }
 
   logs.push(
-    `> SYNTHESIS COMPLETE (${visionMode} + ${qlooMode}): ${hobbyCards.length} HOBBIES + ${allCultural.length} QLOO CULTURAL MATCHES READY.`
+    `> SYNTHESIS COMPLETE [SIGNAL SOURCE: ${signalSource}${
+      signalSource === "CLAUDE_VISION" ? ` (${claudeModelUsed})` : ""
+    } | QLOO: ${qlooMode}]: ${hobbyCards.length} HOBBIES + ${
+      allCultural.length
+    } QLOO CULTURAL MATCHES READY.`
   );
 
   return NextResponse.json({
     status: "ok",
+    signal_source: signalSource,
+    claude_model_used: claudeModelUsed,
     vision_mode: visionMode,
     qloo_mode: qlooMode,
     qloo_base_url: QLOO_BASE_URL,
     aesthetic_dna: {
+      signal_source: signalSource,
       archetype:
         claudeAnalysis?.archetype ||
         `COZY ${effectiveTags[0].toUpperCase()} EXPLORER`,

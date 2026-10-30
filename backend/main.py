@@ -12,9 +12,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from services.qloo import get_hobby_recommendations, get_api_key, QLOO_BASE_URL, AESTHETIC_HOBBY_MATRIX
 
 app = FastAPI(
-    title="Visual Hobby Finder API (Qloo Hackathon)",
-    description="Transforms passive visual inspiration (Pinterest boards, screenshots) into active lifestyle hobbies powered by Qloo Taste AI.",
-    version="2.0.0",
+    title="Visual Hobby Market API (Qloo Hackathon)",
+    description="Transforms passive visual inspiration (Pinterest boards, screenshots) into active lifestyle hobbies powered by Claude Vision + Qloo Taste AI.",
+    version="3.1.0",
 )
 
 app.add_middleware(
@@ -30,12 +30,12 @@ FEED_FILE = Path(__file__).resolve().parent / "community_feed.json"
 DEFAULT_FEED = [
     {
         "id": "post-1",
-        "username": "bratz_valeria99",
-        "avatar": "🌺",
-        "hobby_title": "Y2K Zine Making, Scrapbooking & 2000s Digicam Hunting",
-        "aesthetic_tags": ["Y2K RETRO", "ANIME"],
-        "qloo_match": "Daft Punk / Studio Ghibli",
-        "comment": "Uploaded 4 screenshots from my 2000s magazine Pinterest board and started making a physical collage zine with my besties!",
+        "username": "clara_clay",
+        "avatar": "🏺",
+        "hobby_title": "Hand-Built Pinch Pots, Botanical Reliefs & Air-Dry Ceramics",
+        "aesthetic_tags": ["CERAMICS & CLAY", "BOTANICAL"],
+        "qloo_match": "Plantasia (Mort Garson) / Studio Ghibli",
+        "comment": "Hung 3 photos of speckled stoneware mugs and kitchen plants on my clothesline—started sculpting my own pinch-pot matcha bowl this Sunday!",
         "timestamp": "12 MINS AGO",
         "likes": 24
     },
@@ -44,20 +44,20 @@ DEFAULT_FEED = [
         "username": "analog_mateo",
         "avatar": "📸",
         "hobby_title": "Urban 35mm Film Photography & Architectural Sketching",
-        "aesthetic_tags": ["BRUTALIST ARCHITECTURE", "ANALOG PHOTOGRAPHY"],
-        "qloo_match": "Barbican Centre / Ilford B&W",
+        "aesthetic_tags": ["URBAN ARCHITECTURE", "ANALOG PHOTOGRAPHY"],
+        "qloo_match": "Barbican Centre / Wong Kar-wai",
         "comment": "I had dozens of concrete architecture photos saved on my phone. Finally took a 35mm film camera downtown this weekend!",
         "timestamp": "1 HOUR AGO",
         "likes": 19
     },
     {
         "id": "post-3",
-        "username": "moss_girl_2000",
-        "avatar": "🦋",
+        "username": "moss_girl_club",
+        "avatar": "🌿",
         "hobby_title": "Closed Glass Terrariums, Flower Pressing & Botanical Journals",
         "aesthetic_tags": ["BOTANICAL", "LO-FI JAZZ"],
         "qloo_match": "Plantasia (Mort Garson) / Nujabes",
-        "comment": "Built my first closed moss terrarium while listening to the Plantasia album Qloo recommended. 10/10 vibe!",
+        "comment": "Built my first closed moss terrarium while listening to the Plantasia album Qloo recommended. 10/10 cozy market vibe!",
         "timestamp": "3 HOURS AGO",
         "likes": 31
     }
@@ -94,10 +94,19 @@ def save_feed(posts: List[dict]) -> None:
         pass
 
 
+class InputImagePayload(BaseModel):
+    name: Optional[str] = None
+    dataUrl: Optional[str] = None
+
+
 class RecommendationRequest(BaseModel):
     tags: List[str] = Field(
-        default=["y2k retro", "anime", "kawaii pop"],
+        default=["botanical", "ceramics & clay", "analog photography"],
         description="Semantic aesthetic tags extracted from user images"
+    )
+    images: Optional[List[InputImagePayload]] = Field(
+        default_factory=list,
+        description="Base64 visual inspiration images uploaded by the user"
     )
     entity_types: Optional[List[str]] = Field(
         default=["urn:entity:artist", "urn:entity:place", "urn:entity:book", "urn:entity:movie"],
@@ -107,7 +116,7 @@ class RecommendationRequest(BaseModel):
 
 class FeedPostCreate(BaseModel):
     username: str = Field(..., min_length=2, max_length=32)
-    avatar: str = Field(default="🌺")
+    avatar: str = Field(default="🍀")
     hobby_title: str = Field(..., min_length=3, max_length=120)
     aesthetic_tags: List[str] = Field(default_factory=list)
     qloo_match: str = Field(default="Qloo Taste AI Match")
@@ -129,11 +138,12 @@ async def health_check():
 @app.post("/api/recommendations")
 @app.post("/recommendations")
 async def generate_recommendations(payload: RecommendationRequest):
-    if not payload.tags:
-        raise HTTPException(status_code=400, detail="Please send at least one visual tag.")
+    if not payload.tags and not payload.images:
+        raise HTTPException(status_code=400, detail="Please send at least one visual tag or image.")
     result = await get_hobby_recommendations(
         tags=payload.tags,
         entity_types=payload.entity_types,
+        images=[img.model_dump() for img in (payload.images or [])],
     )
     return result
 

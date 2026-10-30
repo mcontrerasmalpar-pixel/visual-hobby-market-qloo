@@ -1,8 +1,13 @@
+import base64
+import io
+import json
 import os
+import re
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 import httpx
 from dotenv import load_dotenv
+from PIL import Image
 
 # Load environment variables from project root (qloo-y2k-app/.env) or backend/.env
 ROOT_ENV = Path(__file__).resolve().parent.parent.parent / ".env"
@@ -18,146 +23,96 @@ QLOO_BASE_URL = os.getenv("QLOO_BASE_URL", "https://hackathon.api.qloo.com").rst
 
 # Curated Matrix: Visual Aesthetic DNA -> Actionable Hobbies + Qloo Bridge Queries
 AESTHETIC_HOBBY_MATRIX: Dict[str, Dict[str, Any]] = {
-    "y2k retro": {
-        "hobby_title": "Y2K Zine Making, Scrapbooking & 2000s Digicam Hunting",
-        "category": "CREATIVE DESIGN / ZINES",
-        "difficulty": "BEGINNER",
-        "match_score": 99,
-        "description": "Capture everyday moments with early-2000s CCD Cyber-shot cameras, print glossy sticker sheets, and craft physical collage zines with your friends.",
-        "starter_kit": ["2000s CCD Digicam (Sony Cyber-shot)", "Glossy sticker paper & gel pens", "Blender 3D (low-poly retro mode)"],
-        "qloo_queries": ["electronic", "pop art", "video games", "anime"],
-        "fallback_entities": [
-            {"name": "Daft Punk - Discovery", "type": "artist", "sub": "French Touch / Y2K Anthem"},
-            {"name": "Jet Set Radio", "type": "movie", "sub": "Y2K Aesthetic Cult Classic"},
-            {"name": "The Designers Republic", "type": "book", "sub": "Futuristic Graphic Design"}
-        ]
-    },
-    "anime": {
-        "hobby_title": "Cel-Shading Digital Illustration, Artbook Collecting & Figure Customizing",
-        "category": "ANIME / POP CULTURE",
-        "difficulty": "BEGINNER",
-        "match_score": 99,
-        "description": "Design your own 2000s-style anime characters, customize blind-box vinyl figures or Gunpla kits, and explore iconic Japanese animation soundtracks.",
-        "starter_kit": ["Sketchbook + Copic markers or Procreate", "Blank vinyl figure / Model kit", "Japanese Animation Studio Artbook"],
-        "qloo_queries": ["anime", "studio ghibli", "manga", "j-pop"],
-        "fallback_entities": [
-            {"name": "Studio Ghibli / Hayao Miyazaki", "type": "movie", "sub": "Iconic Japanese Animation"},
-            {"name": "Cowboy Bebop (Yoko Kanno)", "type": "artist", "sub": "Anime Soundtrack & Jazz"},
-            {"name": "Akihabara & Nakano Broadway", "type": "place", "sub": "Anime, Figures & Retro Artbooks"}
-        ]
-    },
-    "kawaii pop": {
-        "hobby_title": "Polymer Clay Art Toys, Deco-Den Crafting & UV Resin Charms",
-        "category": "CRAFTS / TOY ART",
-        "difficulty": "BEGINNER",
-        "match_score": 98,
-        "description": "Sculpt and paint your own collectible blind-box style figures, decorate phone cases with whipped silicone clay (Deco-Den), and cast glittery Y2K charms.",
-        "starter_kit": ["Polymer or air-dry clay", "Pastel acrylic paints & high-gloss varnish", "Mini flower beads, rhinestones & UV resin"],
-        "qloo_queries": ["pop art", "sanrio", "japanese pop", "illustration"],
-        "fallback_entities": [
-            {"name": "Takashi Murakami", "type": "artist", "sub": "Superflat Pop Art & Figures"},
-            {"name": "Harajuku Takeshita Street", "type": "place", "sub": "Kawaii Pop Culture Hub"},
-            {"name": "FRUiTS Magazine (Shoichi Aoki)", "type": "book", "sub": "Harajuku Street Fashion & Pop"}
-        ]
-    },
-    "cyberpunk": {
-        "hobby_title": "Retro Hardware Modding & Synthwave Jamming",
-        "category": "TECH / AUDIO",
-        "difficulty": "INTERMEDIATE",
-        "match_score": 98,
-        "description": "Build custom translucent mechanical keyboards with neon lighting, mod 2000s handheld consoles, or produce synthwave tracks using software synthesizers.",
-        "starter_kit": ["Translucent keycaps & soldering kit", "Free DAW (Vital Synth)", "Vintage CCD digital camera"],
-        "qloo_queries": ["cyberpunk", "synthwave", "blade runner", "electronic music"],
-        "fallback_entities": [
-            {"name": "Kavinsky", "type": "artist", "sub": "Synthwave / Outrun"},
-            {"name": "Neuromancer (William Gibson)", "type": "book", "sub": "Sci-Fi Cyberpunk"},
-            {"name": "Akihabara Electric Town", "type": "place", "sub": "Tech & Retro Arcade District"}
-        ]
-    },
-    "brutalist architecture": {
-        "hobby_title": "Urban 35mm Film Photography & Architectural Sketching",
-        "category": "VISUAL ART / URBAN",
-        "difficulty": "BEGINNER",
-        "match_score": 95,
-        "description": "Explore your city documenting bold concrete geometry, dramatic shadows, and monolithic structures using high-contrast black-and-white 35mm film.",
-        "starter_kit": ["Compact 35mm camera or B&W film app", "Ilford HP5 400 Film Roll", "Isometric dot-grid sketchbook"],
-        "qloo_queries": ["brutalism", "architecture", "photography", "minimalism"],
-        "fallback_entities": [
-            {"name": "Barbican Centre", "type": "place", "sub": "Iconic Brutalist Landmark"},
-            {"name": "Andreas Gursky", "type": "artist", "sub": "Large Format Photography"},
-            {"name": "Towards a New Architecture (Le Corbusier)", "type": "book", "sub": "Architecture Manifesto"}
-        ]
-    },
-    "lo-fi jazz": {
-        "hobby_title": "Sampler Beatmaking & Vinyl Crate Digging",
-        "category": "MUSIC / CULTURE",
-        "difficulty": "BEGINNER",
-        "match_score": 96,
-        "description": "Browse local record shops for 70s jazz samples, chop warm tape loops on a pocket sampler, and host cozy late-night listening sessions.",
-        "starter_kit": ["Pad controller or Koala Sampler app", "Entry-level turntable", "Open-back studio headphones"],
-        "qloo_queries": ["nujabes", "lo-fi", "jazz hop", "vinyl"],
-        "fallback_entities": [
-            {"name": "Nujabes", "type": "artist", "sub": "Lo-Fi Jazz Hop Pioneer"},
-            {"name": "J Dilla - Donuts", "type": "artist", "sub": "Instrumental Hip-Hop"},
-            {"name": "Blue Note Jazz Club", "type": "place", "sub": "Historic Jazz Venue"}
-        ]
-    },
     "botanical": {
         "hobby_title": "Closed Glass Terrariums, Flower Pressing & Botanical Journals",
         "category": "NATURE / DESIGN",
         "difficulty": "BEGINNER",
-        "match_score": 96,
+        "match_score": 99,
         "description": "Create self-sustaining miniature ecosystems inside glass jars with live moss, volcanic stones, and pressed flowers while listening to warm ambient music.",
         "starter_kit": ["Airtight glass jar", "Live moss + activated charcoal", "Long aquascaping tweezers & flower press"],
         "qloo_queries": ["botanical garden", "nature", "ambient", "plant"],
         "fallback_entities": [
             {"name": "Plantasia (Mort Garson)", "type": "artist", "sub": "Warm Earth Music for Plants"},
             {"name": "Kew Royal Botanic Gardens", "type": "place", "sub": "Botanical Conservatory"},
-            {"name": "Braiding Sweetgrass", "type": "book", "sub": "Botany & Ecology"}
+            {"name": "Braiding Sweetgrass", "type": "book", "sub": "Botany & Ecology"},
+            {"name": "My Neighbor Totoro", "type": "movie", "sub": "Lush Nature & Forest Spirits"},
+        ]
+    },
+    "ceramics & clay": {
+        "hobby_title": "Hand-Built Pinch Pots, Botanical Reliefs & Air-Dry Ceramics",
+        "category": "CRAFTS / CERAMICS",
+        "difficulty": "BEGINNER",
+        "match_score": 98,
+        "description": "Sculpt speckled stoneware-style coasters, incense holders, and pinch-pot mugs at your table using air-dry or polymer clay and matte mineral glazes.",
+        "starter_kit": ["Speckled air-dry or stoneware clay", "Wooden rib tools & sponge", "Matte acrylic sealers & earth pigments"],
+        "qloo_queries": ["ceramics", "pottery", "indie folk", "craft"],
+        "fallback_entities": [
+            {"name": "Ichiko Aoba", "type": "artist", "sub": "Gentle Acoustic & Studio Folk"},
+            {"name": "The Unknown Craftsman (Soetsu Yanagi)", "type": "book", "sub": "Japanese Folk Craft & Mingei"},
+            {"name": "Mashiko Pottery Village", "type": "place", "sub": "Historic Ceramic Craft Town"},
+            {"name": "Little Forest", "type": "movie", "sub": "Slow Living & Handmade Craft"},
         ]
     },
     "analog photography": {
-        "hobby_title": "Solar Cyanotype Printing & Experimental Film Lab",
+        "hobby_title": "Solar Cyanotype Printing & 35mm Film Walks",
         "category": "ART / DARKROOM LAB",
         "difficulty": "INTERMEDIATE",
-        "match_score": 94,
-        "description": "Bring your digital screenshots into the physical world by printing negatives onto cotton paper using sunlight and Prussian-blue cyanotype chemistry.",
-        "starter_kit": ["Cyanotype sensitizer kit (Part A+B)", "300g watercolor cotton paper", "Printed transparency negatives"],
+        "match_score": 96,
+        "description": "Bring your digital photos into the physical world by printing negatives onto cotton paper using sunlight and Prussian-blue cyanotype chemistry.",
+        "starter_kit": ["Cyanotype sensitizer kit (Part A+B)", "300g watercolor cotton paper", "Compact 35mm film camera"],
         "qloo_queries": ["indie film", "photography", "art house", "indie rock"],
         "fallback_entities": [
-            {"name": "Wong Kar-wai", "type": "movie", "sub": "Cinematic Color & Neon Mood"},
+            {"name": "Wong Kar-wai", "type": "movie", "sub": "Cinematic Color & Mood"},
             {"name": "Vivian Maier", "type": "book", "sub": "Street Photography Archive"},
-            {"name": "Fotografiska Museum", "type": "place", "sub": "Contemporary Photography Space"}
+            {"name": "Fotografiska Museum", "type": "place", "sub": "Contemporary Photography Space"},
+            {"name": "Khruangbin", "type": "artist", "sub": "Warm Analog Instrumental Grooves"},
         ]
     },
-    "dark academia": {
-        "hobby_title": "Handcrafted Bookbinding, Fountain Pen Calligraphy & Classic Book Club",
-        "category": "LITERATURE / CRAFT",
+    "lo-fi jazz": {
+        "hobby_title": "Sampler Beatmaking & Vinyl Crate Digging",
+        "category": "MUSIC / CULTURE",
         "difficulty": "BEGINNER",
-        "match_score": 93,
-        "description": "Sew your own exposed-spine journals with waxed linen thread, practice calligraphy with sepia ink, and explore historic libraries and cozy cafes.",
-        "starter_kit": ["Fountain pen + sepia ink", "Waxed thread & bookbinding awl", "120g ivory dot-grid paper"],
-        "qloo_queries": ["classical music", "literature", "philosophy", "museum"],
+        "match_score": 97,
+        "description": "Browse local record shops for 70s jazz samples, chop warm tape loops on a pocket sampler, and host cozy late-night listening sessions.",
+        "starter_kit": ["Pad controller or Koala Sampler app", "Entry-level turntable", "Open-back studio headphones"],
+        "qloo_queries": ["nujabes", "lo-fi", "jazz hop", "vinyl"],
         "fallback_entities": [
-            {"name": "The Secret History (Donna Tartt)", "type": "book", "sub": "Dark Academia Essential"},
-            {"name": "Max Richter", "type": "artist", "sub": "Neo-Classical / Post-Minimalism"},
-            {"name": "Shakespeare and Company", "type": "place", "sub": "Historic Independent Bookstore"}
+            {"name": "Nujabes", "type": "artist", "sub": "Lo-Fi Jazz Hop Pioneer"},
+            {"name": "J Dilla - Donuts", "type": "artist", "sub": "Instrumental Hip-Hop"},
+            {"name": "Blue Note Jazz Club", "type": "place", "sub": "Historic Jazz Venue"},
+            {"name": "Whisper of the Heart", "type": "movie", "sub": "Cozy Creative Storytelling"},
         ]
     },
-    "indie sleaze": {
-        "hobby_title": "Vinyl / CDJ Mixing & Underground Nightlife Zines",
-        "category": "MUSIC / NIGHTLIFE",
-        "difficulty": "INTERMEDIATE",
-        "match_score": 95,
-        "description": "Mix electro-clash, post-punk revival, and bloghouse tracks while documenting your local music scene with direct flash photography.",
-        "starter_kit": ["2-channel DJ controller", "Point-and-shoot camera with direct flash", "Curated electro-indie playlist"],
-        "qloo_queries": ["indie rock", "electroclash", "post-punk", "nightlife"],
+    "anime & illustration": {
+        "hobby_title": "Gouache Background Painting, Sketchbook Journaling & Artbook Collecting",
+        "category": "ILLUSTRATION / ANIMATION",
+        "difficulty": "BEGINNER",
+        "match_score": 99,
+        "description": "Paint luminous sky and meadow scenes inspired by animation background art using matte gouache paints, and keep an illustrated daily sketchbook.",
+        "starter_kit": ["Himi or Holbein Gouache Set", "Cold-press watercolor sketchbook", "Studio Ghibli Layout & Background Artbook"],
+        "qloo_queries": ["anime", "studio ghibli", "manga", "j-pop"],
         "fallback_entities": [
-            {"name": "LCD Soundsystem", "type": "artist", "sub": "Dance-Punk / Indie Electronic"},
-            {"name": "Justice - Cross", "type": "artist", "sub": "French Electro"},
-            {"name": "Meet Me in the Bathroom", "type": "book", "sub": "2000s Music Oral History"}
+            {"name": "Studio Ghibli / Hayao Miyazaki", "type": "movie", "sub": "Iconic Hand-Drawn Animation"},
+            {"name": "Joe Hisaishi", "type": "artist", "sub": "Orchestral & Piano Soundtracks"},
+            {"name": "Ghibli Museum Mitaka", "type": "place", "sub": "Animation Craft & Sketch Archives"},
+            {"name": "Starting Point (Hayao Miyazaki)", "type": "book", "sub": "Essays & Sketches on Animation"},
         ]
-    }
+    },
+    "cozy reading": {
+        "hobby_title": "Handcrafted Bookbinding, Fountain Pen Journaling & Indie Book Club",
+        "category": "LITERATURE / PAPER CRAFT",
+        "difficulty": "BEGINNER",
+        "match_score": 95,
+        "description": "Sew your own exposed-spine journals with waxed linen thread, annotate favorite essays with fountain pen ink, and visit independent bookshops.",
+        "starter_kit": ["Fountain pen + warm sepia ink", "Waxed linen thread & bookbinding awl", "120g ivory dot-grid paper"],
+        "qloo_queries": ["classical music", "literature", "philosophy", "bookstore"],
+        "fallback_entities": [
+            {"name": "Shakespeare and Company", "type": "place", "sub": "Historic Independent Bookstore"},
+            {"name": "Max Richter", "type": "artist", "sub": "Neo-Classical / Post-Minimalism"},
+            {"name": "84, Charing Cross Road", "type": "book", "sub": "Letters Between Book Lovers"},
+            {"name": "Paterson (Jim Jarmusch)", "type": "movie", "sub": "Poetic Everyday Observation"},
+        ]
+    },
 }
 
 
@@ -171,6 +126,107 @@ def get_api_key() -> str:
     if key in ("", "your_qloo_hackathon_api_key_here"):
         return ""
     return key
+
+
+def resize_image_backend(data_url: str, index: int, logs: List[str]) -> Optional[Tuple[str, str]]:
+    """Resizes base64 image on the backend to <=512x512 JPEG quality 75 before sending to Claude Vision."""
+    m = re.match(r"^data:(image/[a-zA-Z0-9.+-]+);base64,(.+)$", data_url or "")
+    if not m:
+        return None
+    media_type, b64_data = m.group(1), m.group(2)
+    raw = base64.b64decode(b64_data)
+    orig_kb = len(raw) / 1024.0
+    try:
+        img = Image.open(io.BytesIO(raw)).convert("RGB")
+        img.thumbnail((512, 512))
+        out = io.BytesIO()
+        img.save(out, format="JPEG", quality=75, optimize=True)
+        resized_bytes = out.getvalue()
+        resized_kb = len(resized_bytes) / 1024.0
+        logs.append(f"  [BACKEND RESIZE] Image #{index + 1}: {orig_kb:.1f} KB -> {resized_kb:.1f} KB (<=512px JPEG)")
+        return "image/jpeg", base64.b64encode(resized_bytes).decode("ascii")
+    except Exception:
+        logs.append(f"  [BACKEND IMAGE CHECK] Image #{index + 1}: {orig_kb:.1f} KB ({media_type})")
+        return media_type, b64_data
+
+
+async def analyze_with_claude_vision(
+    images: List[Dict[str, Any]],
+    user_tags: List[str],
+    logs: List[str]
+) -> Tuple[Optional[Dict[str, Any]], str]:
+    """
+    Calls Anthropic Claude Vision with:
+    - Single default model: claude-haiku-5-5 (sonnet only if explicitly configured via CLAUDE_MODEL)
+    - No temperature parameter
+    - Backend-resized images (<=512px JPEG)
+    - 25s timeout and 1 single retry (max_attempts = 2)
+    """
+    selected_model = os.getenv("CLAUDE_MODEL", "claude-haiku-5-5").strip() or "claude-haiku-5-5"
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+    if not anthropic_key or anthropic_key == "your_anthropic_claude_api_key_here":
+        return None, selected_model
+
+    content_blocks: List[Dict[str, Any]] = []
+    valid_images = [img for img in (images or []) if str(img.get("dataUrl", "")).startswith("data:image/")][:4]
+
+    for idx, img in enumerate(valid_images):
+        resized = resize_image_backend(str(img.get("dataUrl", "")), idx, logs)
+        if resized:
+            mtype, b64 = resized
+            content_blocks.append({
+                "type": "image",
+                "source": {"type": "base64", "media_type": mtype, "data": b64},
+            })
+
+    prompt_text = (
+        f"You are the Multimodal Visual-to-Semantic Bridge for 'Visual Hobby Market', a Qloo Hackathon application.\n"
+        f"Inspect the user's {len(valid_images)} uploaded image(s) (and optional tags: {', '.join(user_tags) or 'none'}) "
+        f"and return ONLY valid JSON with keys: archetype, visual_narrative, per_image_captions, dynamic_tags, "
+        f"qloo_seeds ({{tag_queries, entity_queries}}), and custom_hobbies (3 items with tag, title, category, difficulty, match_score, description, starter_kit)."
+    )
+    content_blocks.append({"type": "text", "text": prompt_text})
+
+    max_attempts = 2
+    async with httpx.AsyncClient() as client:
+        for attempt in range(1, max_attempts + 1):
+            try:
+                logs.append(
+                    f"> [CLAUDE VISION] Attempt {attempt}/{max_attempts}: Sending {len(valid_images)} image(s) to Anthropic ({selected_model}, timeout=25s)..."
+                )
+                resp = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "x-api-key": anthropic_key,
+                        "anthropic-version": "2023-06-01",
+                        "content-type": "application/json",
+                    },
+                    json={
+                        "model": selected_model,
+                        "max_tokens": 900,
+                        "messages": [{"role": "user", "content": content_blocks}],
+                    },
+                    timeout=25.0,
+                )
+                if resp.status_code != 200:
+                    logs.append(f"  [!] Claude API ({selected_model}) returned HTTP {resp.status_code}: {resp.text[:110]}")
+                    if 400 <= resp.status_code < 500 and resp.status_code != 429:
+                        break
+                    continue
+
+                data = resp.json()
+                raw_text = next((c.get("text", "") for c in data.get("content", []) if c.get("type") == "text"), "")
+                m = re.search(r"\{[\s\S]*\}", raw_text)
+                if not m:
+                    continue
+                parsed = json.loads(m.group(0))
+                logs.append(f"  [OK] [SIGNAL SOURCE: CLAUDE_VISION ({selected_model})] Decoded archetype: \"{parsed.get('archetype', '')}\"")
+                return parsed, selected_model
+            except Exception as exc:
+                logs.append(f"  [!] Claude Vision attempt {attempt}/{max_attempts} failed ({selected_model}): {str(exc)[:80]}")
+
+    return None, selected_model
+
 
 
 async def resolve_qloo_signals(
@@ -332,24 +388,38 @@ async def fetch_qloo_insights(
 
 async def get_hobby_recommendations(
     tags: List[str],
-    entity_types: Optional[List[str]] = None
+    entity_types: Optional[List[str]] = None,
+    images: Optional[List[Dict[str, Any]]] = None
 ) -> Dict[str, Any]:
     """
     Orchestrates the full Visual-to-Hobby pipeline:
-    1. Normalizes the user's visual aesthetic tags.
+    1. Analyzes uploaded images + tags via Claude Vision (claude-haiku-5-5 default, no temperature, 25s timeout, 1 retry).
     2. Queries https://hackathon.api.qloo.com (/v2/tags, /search, and /v2/insights).
     3. Synthesizes actionable Hobby cards paired with Qloo cultural matches.
     """
     logs: List[str] = [
-        "> INITIALIZING VISUAL_HOBBY_FINDER ENGINE v2.4...",
-        f"> TARGET GATEWAY: {QLOO_BASE_URL}",
+        "> INITIALIZING VISUAL_HOBBY_MARKET ENGINE v3.1 (CLAUDE VISION + QLOO TASTE AI)...",
+        f"> TARGET QLOO GATEWAY: {QLOO_BASE_URL}",
     ]
 
     clean_tags = [t.strip().lower() for t in tags if t.strip()]
-    if not clean_tags:
-        clean_tags = ["y2k retro", "anime", "kawaii pop"]
+    claude_analysis, claude_model_used = await analyze_with_claude_vision(images or [], clean_tags, logs)
+    if claude_analysis:
+        vision_mode = "CLAUDE_VISION_LIVE"
+        signal_source = "CLAUDE_VISION"
+        dyn_tags = [str(t).strip().lower() for t in claude_analysis.get("dynamic_tags", []) if str(t).strip()]
+        clean_tags = list(dict.fromkeys(dyn_tags + clean_tags))
+    else:
+        vision_mode = "FALLBACK_HEURISTIC"
+        signal_source = "FALLBACK"
+        logs.append(
+            f"> [SIGNAL SOURCE: FALLBACK_HEURISTIC] Claude Vision ({claude_model_used}) did not return analysis -> Using fallback aesthetic signals."
+        )
 
-    logs.append(f"> DECODED VISUAL DNA TAGS: {', '.join(clean_tags).upper()}")
+    if not clean_tags:
+        clean_tags = ["botanical", "ceramics & clay", "analog photography"]
+
+    logs.append(f"> ACTIVE AESTHETIC SIGNALS: {', '.join(clean_tags).upper()}")
 
     if not entity_types:
         entity_types = ["urn:entity:artist", "urn:entity:place", "urn:entity:book", "urn:entity:movie"]
@@ -424,7 +494,7 @@ async def get_hobby_recommendations(
                 "id": f"hobby-custom-{tag.replace(' ', '-')}",
                 "tag": custom_label,
                 "title": f"Hands-On {tag.title()} Creation, Collecting & DIY Club",
-                "category": f"CUSTOM STICKER // {custom_label}",
+                "category": f"CUSTOM CRAFT // {custom_label}",
                 "difficulty": "BEGINNER",
                 "match_score": 97,
                 "description": (
@@ -447,33 +517,39 @@ async def get_hobby_recommendations(
 
     # Ensure all 4 cross-domain types (artist, movie, book, place) have at least one match for the UI filter tabs
     default_cross_domain = [
-        {"name": "Daft Punk - Discovery", "type": "artist", "sub": "French Touch / Y2K Electronic"},
-        {"name": "Studio Ghibli / Spirited Away", "type": "movie", "sub": "Iconic Animation & Visual World"},
-        {"name": "FRUiTS Magazine (Shoichi Aoki)", "type": "book", "sub": "Harajuku Street Fashion Archive"},
-        {"name": "Harajuku Takeshita Street", "type": "place", "sub": "Pop Culture & Vintage District"},
+        {"name": "Plantasia (Mort Garson)", "type": "artist", "sub": "Warm Earth Music for Plants"},
+        {"name": "Studio Ghibli / My Neighbor Totoro", "type": "movie", "sub": "Iconic Animation & Visual World"},
+        {"name": "The Unknown Craftsman (Soetsu Yanagi)", "type": "book", "sub": "Japanese Folk Craft & Mingei"},
+        {"name": "Kew Royal Botanic Gardens", "type": "place", "sub": "Botanical Conservatory & Glasshouse"},
     ]
     existing_types = {item.get("type") for item in all_cultural}
     for fallback_item in default_cross_domain:
         if fallback_item["type"] not in existing_types:
             all_cultural.append(fallback_item)
 
-    logs.append(f"> SYNTHESIS COMPLETE: {len(hobby_cards)} HOBBIES + {len(all_cultural)} QLOO CULTURAL MATCHES READY.")
-    logs.append("> SYSTEM READY_")
+    logs.append(
+        f"> SYNTHESIS COMPLETE (SIGNALS={signal_source} [{claude_model_used if signal_source == 'CLAUDE_VISION' else 'LOCAL_TAGS'}] + QLOO={qloo_mode}): {len(hobby_cards)} HOBBIES + {len(all_cultural)} QLOO CULTURAL MATCHES READY."
+    )
 
     return {
         "status": "ok",
         "qloo_mode": qloo_mode,
+        "vision_mode": vision_mode,
+        "signal_source": signal_source,
+        "claude_model_used": claude_model_used if signal_source == "CLAUDE_VISION" else None,
         "qloo_base_url": QLOO_BASE_URL,
         "aesthetic_dna": {
-            "archetype": f"2000s {clean_tags[0].upper()} STAR",
+            "archetype": (claude_analysis or {}).get("archetype") or f"{clean_tags[0].upper()} MARKET CURATOR",
             "tags": clean_tags,
-            "vibe_summary": (
+            "vibe_summary": (claude_analysis or {}).get("visual_narrative") or (
                 f"Your visual scrapbook blends {', '.join(clean_tags[:3])}! "
                 "Instead of just saving screenshots on your phone, your aesthetic DNA points to hands-on creative projects, "
-                "collectible culture, and iconic music & places."
-            )
+                "tactile crafts, and iconic music & places."
+            ),
+            "per_image_captions": (claude_analysis or {}).get("per_image_captions", []),
+            "qloo_seeds": (claude_analysis or {}).get("qloo_seeds"),
         },
         "hobbies": hobby_cards,
-        "qloo_insights": all_cultural[:12],
+        "qloo_insights": all_cultural[:16],
         "terminal_logs": logs,
     }
