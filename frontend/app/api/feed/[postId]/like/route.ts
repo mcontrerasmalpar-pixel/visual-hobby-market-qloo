@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { feedStore } from "../../feedStore";
+import { feedStore } from "../../../feedStore";
 
 export async function POST(
   _req: NextRequest,

@@ -487,7 +487,17 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const hobbyCards = [];
+  const hobbyCards: Array<{
+    id: string;
+    tag: string;
+    title: string;
+    category: string;
+    difficulty: string;
+    match_score: number;
+    description: string;
+    starter_kit: string[];
+    cultural_matches: CulturalEntity[];
+  }> = [];
   const usedKeys = new Set<string>();
 
   for (const tag of cleanTags) {
