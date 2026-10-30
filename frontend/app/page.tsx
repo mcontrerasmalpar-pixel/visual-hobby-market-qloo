@@ -12,7 +12,8 @@ interface UploadedImage {
   name: string;
   previewUrl: string;
   dataUrl?: string;
-  detectedTag: string;
+  visionCaption?: string;
+  localPreviewLabel: string;
   dominantHex: string;
   paletteHexes: string[];
 }
@@ -103,9 +104,9 @@ export default function HomePage() {
     "Hang your favorite screenshots on the clothesline above or pick your aesthetic stickers to unlock cozy hobbies and cultural picks powered by Claude Vision & Qloo!"
   );
   const [visionMode, setVisionMode] = useState<string>("READY");
-  const [signalSource, setSignalSource] = useState<"CLAUDE_VISION" | "FALLBACK">(
-    "FALLBACK"
-  );
+  const [signalSource, setSignalSource] = useState<
+    "claude_vision" | "fallback_no_vision"
+  >("fallback_no_vision");
   const [claudeModelUsed, setClaudeModelUsed] =
     useState<string>("claude-haiku-5-5");
   const [qlooMode, setQlooMode] = useState<string>("QLOO_READY");
@@ -116,7 +117,7 @@ export default function HomePage() {
   const [hobbies, setHobbies] = useState<HobbyCard[]>([]);
   const [qlooInsights, setQlooInsights] = useState<CulturalMatch[]>([]);
   const [terminalLogs, setTerminalLogs] = useState<string[]>([
-    "🍀 QLOO HOBBY MARKET ENGINE v3.0 (CLAUDE VISION + QLOO TASTE AI) READY...",
+    "🍀 QLOO HOBBY MARKET ENGINE v3.2 (CLAUDE VISION TOOL_USE + QLOO TASTE AI) READY...",
     "☁️ TARGET GATEWAY: https://hackathon.api.qloo.com/v2/insights",
   ]);
 
@@ -156,7 +157,6 @@ export default function HomePage() {
         canvas.width = 32;
         canvas.height = 32;
         const ctx = canvas.getContext("2d");
-        let detectedTag = "cozy aesthetic";
         let dominantHex = "#10B981";
         let paletteHexes: string[] = ["#BAE6FD", "#A7F3D0", "#FEF08A"];
 
@@ -205,52 +205,11 @@ export default function HomePage() {
           const hexAvg = rgbToHex(r, g, b);
           const hexTop = rgbToHex(r1 / c1, g1 / c1, b1 / c1);
           const hexBot = rgbToHex(r2 / c2, g2 / c2, b2 / c2);
+          dominantHex = hexAvg;
           paletteHexes = Array.from(new Set([hexAvg, hexTop, hexBot]));
-
-          const brightness = (r + g + b) / 3;
-          const nameLow = file.name.toLowerCase();
-
-          if (
-            nameLow.includes("anime") ||
-            nameLow.includes("manga") ||
-            nameLow.includes("ghibli")
-          ) {
-            detectedTag = "anime & illustration";
-            dominantHex = "#60A5FA";
-          } else if (
-            nameLow.includes("ceramic") ||
-            nameLow.includes("clay") ||
-            nameLow.includes("craft") ||
-            (brightness > 155 && (r > 150 || g > 150))
-          ) {
-            detectedTag = "ceramics & clay";
-            dominantHex = "#F59E0B";
-          } else if (
-            nameLow.includes("plant") ||
-            nameLow.includes("flower") ||
-            (g > r + 15 && g > b + 10)
-          ) {
-            detectedTag = "botanical";
-            dominantHex = "#10B981";
-          } else if (
-            nameLow.includes("arch") ||
-            (Math.abs(r - g) < 10 && Math.abs(g - b) < 10 && brightness < 150)
-          ) {
-            detectedTag = "urban architecture";
-            dominantHex = "#38BDF8";
-          } else if (brightness < 75) {
-            detectedTag = "cozy reading";
-            dominantHex = "#A855F7";
-          } else if (r > 140 && g > 110) {
-            detectedTag = "analog photography";
-            dominantHex = "#F59E0B";
-          } else {
-            detectedTag = "botanical";
-            dominantHex = "#38BDF8";
-          }
         }
 
-        // Also create a compressed JPEG dataUrl (max 512px) for Claude Vision API
+        // Create a compressed JPEG dataUrl (max 512px) for Claude Vision API
         let dataUrl = "";
         try {
           const maxDim = 512;
@@ -275,7 +234,8 @@ export default function HomePage() {
           name: file.name,
           previewUrl: url,
           dataUrl,
-          detectedTag,
+          visionCaption: undefined,
+          localPreviewLabel: "vista previa local",
           dominantHex,
           paletteHexes,
         });
@@ -285,7 +245,8 @@ export default function HomePage() {
           id: `${file.name}-${Date.now()}`,
           name: file.name,
           previewUrl: url,
-          detectedTag: "botanical",
+          visionCaption: undefined,
+          localPreviewLabel: "vista previa local",
           dominantHex: "#38BDF8",
           paletteHexes: ["#BAE6FD", "#A7F3D0"],
         });
@@ -340,10 +301,6 @@ export default function HomePage() {
     tagsToQuery: string[] = selectedTags,
     imagesToAnalyze: UploadedImage[] = images
   ) {
-    const effectiveTags =
-      tagsToQuery.length > 0
-        ? tagsToQuery
-        : ["botanical", "ceramics & clay", "analog photography"];
     setIsLoading(true);
 
     try {
@@ -351,7 +308,8 @@ export default function HomePage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          tags: effectiveTags,
+          // Only send the user's manually selected tags (never inject fixed visual tags from client)
+          tags: tagsToQuery,
           images: imagesToAnalyze.map((img) => ({
             name: img.name,
             dataUrl: img.dataUrl || "",
@@ -373,9 +331,11 @@ export default function HomePage() {
       const data = await res.json();
       setArchetype(data.aesthetic_dna?.archetype || "COZY INDIE EXPLORER");
       setVibeSummary(data.aesthetic_dna?.vibe_summary || "");
-      setVisionMode(data.vision_mode || "FALLBACK_HEURISTIC");
+      setVisionMode(data.vision_mode || "FALLBACK_NO_VISION");
       setSignalSource(
-        data.signal_source === "CLAUDE_VISION" ? "CLAUDE_VISION" : "FALLBACK"
+        data.signal_source === "claude_vision"
+          ? "claude_vision"
+          : "fallback_no_vision"
       );
       setClaudeModelUsed(data.claude_model_used || "claude-haiku-5-5");
       setQlooMode(data.qloo_mode || "QLOO_LIVE");
@@ -383,22 +343,27 @@ export default function HomePage() {
         setQlooSeeds(data.aesthetic_dna.qloo_seeds);
       }
 
-      // If Claude Vision discovered dynamic tags, add them to the scrapbook!
-      if (Array.isArray(data.aesthetic_dna?.tags) && data.aesthetic_dna.tags.length > 0) {
+      // Only add tags to the scrapbook if Claude Vision actually extracted them
+      if (
+        data.signal_source === "claude_vision" &&
+        Array.isArray(data.aesthetic_dna?.tags) &&
+        data.aesthetic_dna.tags.length > 0
+      ) {
         const returnedTags: string[] = data.aesthetic_dna.tags;
         setAvailableTags((prev) => Array.from(new Set([...prev, ...returnedTags])));
         setSelectedTags(returnedTags.slice(0, 6));
       }
 
-      // If Claude Vision returned per-image micro-captions, update the photo badges on the clothesline!
+      // Update polaroid captions ONLY if Claude Vision returned per_image_captions
       if (
+        data.signal_source === "claude_vision" &&
         Array.isArray(data.aesthetic_dna?.per_image_captions) &&
         data.aesthetic_dna.per_image_captions.length > 0
       ) {
         const captions: string[] = data.aesthetic_dna.per_image_captions;
         setImages((prev) =>
           prev.map((item, idx) =>
-            captions[idx] ? { ...item, detectedTag: captions[idx] } : item
+            captions[idx] ? { ...item, visionCaption: captions[idx] } : item
           )
         );
       }
@@ -707,9 +672,15 @@ export default function HomePage() {
                                       {img.name}
                                     </div>
                                     <div className="text-center">
-                                      <span className="inline-block handwritten-note text-base text-[#065F46] bg-[#D1FAE5] border border-[#4A3531] px-2.5 py-0.2 rounded-full">
-                                        ✦ {img.detectedTag}
-                                      </span>
+                                      {img.visionCaption ? (
+                                        <span className="inline-block handwritten-note text-base text-[#065F46] bg-[#D1FAE5] border border-[#4A3531] px-2.5 py-0.2 rounded-full">
+                                          ✦ {img.visionCaption}
+                                        </span>
+                                      ) : (
+                                        <span className="inline-block text-[11px] font-bold text-[#4A3531]/80 bg-[#FEFCE8] border border-[#4A3531]/50 px-2.5 py-0.5 rounded-full">
+                                          🖼️ {img.localPreviewLabel}
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
@@ -829,9 +800,9 @@ export default function HomePage() {
                     title="02. Your Cozy Vibe Check"
                     accent="lime"
                     badge={
-                      signalSource === "CLAUDE_VISION"
+                      signalSource === "claude_vision"
                         ? `CLAUDE (${claudeModelUsed})`
-                        : "FALLBACK SIGNALS"
+                        : "FALLBACK SIN VISIÓN"
                     }
                     sticker="🍀"
                   >
@@ -852,14 +823,14 @@ export default function HomePage() {
                           </span>
                           <span
                             className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-full border border-[#4A3531] ${
-                              signalSource === "CLAUDE_VISION"
+                              signalSource === "claude_vision"
                                 ? "bg-[#D1FAE5] text-[#065F46]"
                                 : "bg-[#FEF3C7] text-[#92400E]"
                             }`}
                           >
-                            {signalSource === "CLAUDE_VISION"
-                              ? `🟢 Source: Claude (${claudeModelUsed})`
-                              : "🟠 Source: Fallback Heuristic"}
+                            {signalSource === "claude_vision"
+                              ? `🟢 Source: claude_vision (${claudeModelUsed})`
+                              : "🟠 Source: fallback_no_vision (Fallback sin visión)"}
                           </span>
                         </div>
                         <p className="text-xs sm:text-sm font-bold text-[#4A3531] leading-relaxed">
@@ -876,9 +847,9 @@ export default function HomePage() {
                               🎯 Seeds for Qloo Taxonomy:
                             </span>
                             <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-white text-[#4A3531] border border-[#4A3531]">
-                              {signalSource === "CLAUDE_VISION"
-                                ? "Translated by Claude Vision"
-                                : "From Local Tag Fallback"}
+                              {signalSource === "claude_vision"
+                                ? "Translated by Claude Vision (tool_use)"
+                                : "Fallback sin visión (Neutral/Manual Tags)"}
                             </span>
                           </div>
                           {qlooSeeds.entity_queries.length > 0 && (

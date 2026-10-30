@@ -20,6 +20,9 @@ interface InputImagePayload {
   dominantHex?: string;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { z } = eval('require("next/dist/compiled/zod")');
+
 interface ClaudeVisionHobby {
   tag: string;
   title: string;
@@ -31,16 +34,132 @@ interface ClaudeVisionHobby {
 }
 
 interface ClaudeVisionAnalysis {
+  tags: string[];
+  vibe_summary: string;
   archetype: string;
-  visual_narrative: string;
   per_image_captions: string[];
-  dynamic_tags: string[];
   qloo_seeds: {
     tag_queries: string[];
     entity_queries: string[];
   };
   custom_hobbies: ClaudeVisionHobby[];
 }
+
+const VisualSignalsToolSchema = z.object({
+  tags: z.array(z.string().min(1)).min(1),
+  vibe_summary: z.string().min(5),
+  archetype: z.string().optional().default("VISUAL MARKET EXPLORER"),
+  per_image_captions: z.array(z.string()).optional().default([]),
+  qloo_seeds: z
+    .object({
+      tag_queries: z.array(z.string()).default([]),
+      entity_queries: z.array(z.string()).default([]),
+    })
+    .optional()
+    .default({ tag_queries: [], entity_queries: [] }),
+  custom_hobbies: z
+    .array(
+      z.object({
+        tag: z.string(),
+        title: z.string(),
+        category: z.string().optional().default("CREATIVE CRAFT"),
+        difficulty: z.string().optional().default("BEGINNER"),
+        match_score: z.number().optional().default(98),
+        description: z.string(),
+        starter_kit: z.array(z.string()).default([]),
+      })
+    )
+    .optional()
+    .default([]),
+});
+
+const VISUAL_SIGNALS_TOOL = {
+  name: "visual_signals",
+  description:
+    "Extracts structured visual aesthetic tags, a specific visual vibe summary, Qloo taxonomy seeds, and actionable hobbies from the user's uploaded images.",
+  input_schema: {
+    type: "object",
+    properties: {
+      tags: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "4 to 6 specific visual aesthetic tags decoded directly from the uploaded images.",
+      },
+      vibe_summary: {
+        type: "string",
+        description:
+          "2-sentence specific description of the lighting, textures, objects, and atmosphere across the uploaded images and how they translate into a lifestyle vibe.",
+      },
+      archetype: {
+        type: "string",
+        description: "3-5 WORD CREATIVE PERSONA IN CAPS",
+      },
+      per_image_captions: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "Short 2-4 word micro-vibe caption for each uploaded image in order.",
+      },
+      qloo_seeds: {
+        type: "object",
+        properties: {
+          tag_queries: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "4 to 6 short genre/style/mood keywords for Qloo /v2/tags.",
+          },
+          entity_queries: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "4 to 6 real cultural entities (artists, directors, movies, books, places) for Qloo /search.",
+          },
+        },
+        required: ["tag_queries", "entity_queries"],
+      },
+      custom_hobbies: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            tag: { type: "string" },
+            title: { type: "string" },
+            category: { type: "string" },
+            difficulty: { type: "string" },
+            match_score: {
+              type: "number",
+              description: "Match percentage from 80 to 99",
+            },
+            description: { type: "string" },
+            starter_kit: {
+              type: "array",
+              items: { type: "string" },
+            },
+          },
+          required: [
+            "tag",
+            "title",
+            "category",
+            "difficulty",
+            "match_score",
+            "description",
+            "starter_kit",
+          ],
+        },
+      },
+    },
+    required: [
+      "tags",
+      "vibe_summary",
+      "archetype",
+      "per_image_captions",
+      "qloo_seeds",
+      "custom_hobbies",
+    ],
+  },
+};
 
 interface AestheticTemplate {
   hobby_title: string;
@@ -465,7 +584,8 @@ async function analyzeWithClaudeVision(
   images: InputImagePayload[],
   userTags: string[],
   anthropicKey: string,
-  logs: string[]
+  logs: string[],
+  fetchImpl: typeof fetch = fetch
 ): Promise<{ analysis: ClaudeVisionAnalysis | null; modelUsed: string }> {
   const validImages = images
     .filter((img) => img.dataUrl && img.dataUrl.startsWith("data:image/"))
@@ -476,7 +596,7 @@ async function analyzeWithClaudeVision(
     process.env.CLAUDE_MODEL || "claude-haiku-5-5"
   ).trim();
 
-  if (validImages.length === 0 && userTags.length === 0) {
+  if (validImages.length === 0) {
     return { analysis: null, modelUsed: selectedModel };
   }
 
@@ -504,53 +624,37 @@ async function analyzeWithClaudeVision(
   }
 
   const promptText = `You are the Multimodal Visual-to-Semantic Bridge for "Visual Hobby Market", a Qloo Hackathon application.
-Your job is to inspect the user's ${validImages.length} uploaded visual inspiration image(s) (and their optional selected tags: ${
+Inspect the user's ${validImages.length} uploaded visual inspiration image(s) (and their optional selected tags: ${
     userTags.join(", ") || "none"
-  }) and translate their nuanced visual intuition into:
-1. A poetic, specific visual reading that captures subtle details fixed tags miss (e.g. "Warm late-afternoon sunlight in a kitchen with hanging pothos, speckled stoneware, and analog paper textures").
-2. Semantic seeds in the exact vocabulary that Qloo's Taste AI taxonomy understands:
-   - tag_queries: 4 to 6 short genre/style/mood keywords for Qloo's /v2/tags endpoint (e.g. "ambient", "indie folk", "botanical", "ceramics", "art house", "japanese pop", "jazz hop", "minimalism").
-   - entity_queries: 4 to 6 real, well-known cultural entities (musical artists, film directors, movies, books, or iconic places) that match the visual vibe for Qloo's /search endpoint (e.g. "Mort Garson", "Studio Ghibli", "Nujabes", "Wong Kar-wai", "Kinfolk", "Ichiko Aoba").
-3. 3 specific, hands-on, actionable real-world hobbies tailored directly to the visual details in these images (not generic templates), each with 3 concrete starter_kit items.
-
-Return ONLY valid JSON matching this exact structure (no markdown fences, no extra text):
-{
-  "archetype": "3-5 WORD CREATIVE PERSONA IN CAPS",
-  "visual_narrative": "2-sentence specific description of the lighting, textures, objects, and atmosphere across the uploaded images and how they translate into a lifestyle vibe.",
-  "per_image_captions": ["short 2-4 word micro-vibe for image 1", "short 2-4 word micro-vibe for image 2"],
-  "dynamic_tags": ["specific vibe tag 1", "specific vibe tag 2", "specific vibe tag 3", "specific vibe tag 4"],
-  "qloo_seeds": {
-    "tag_queries": ["genre or style 1", "genre or style 2", "genre or style 3", "genre or style 4"],
-    "entity_queries": ["Real Artist or Movie 1", "Real Artist or Director 2", "Real Book or Author 3", "Real Place or Cultural Icon 4"]
-  },
-  "custom_hobbies": [
-    {
-      "tag": "SHORT VIBE TAG",
-      "title": "Specific Actionable Hobby Title",
-      "category": "CATEGORY / CRAFT",
-      "difficulty": "BEGINNER",
-      "match_score": 99,
-      "description": "2 sentences explaining how to practice this hobby based on the exact aesthetic details in the user's photos.",
-      "starter_kit": ["Item 1", "Item 2", "Item 3"]
-    }
-  ]
-}`;
+  }) and call the "visual_signals" tool with:
+1. tags: 4 to 6 specific visual aesthetic tags decoded directly from the uploaded images.
+2. vibe_summary: 2-sentence specific description of the lighting, textures, objects, and atmosphere across the uploaded images and how they translate into a lifestyle vibe.
+3. archetype: 3-5 WORD CREATIVE PERSONA IN CAPS.
+4. per_image_captions: short 2-4 word micro-vibe caption for each uploaded image.
+5. qloo_seeds:
+   - tag_queries: 4 to 6 short genre/style/mood keywords for Qloo's /v2/tags endpoint.
+   - entity_queries: 4 to 6 real, well-known cultural entities (musical artists, film directors, movies, books, or iconic places) for Qloo's /search endpoint.
+6. custom_hobbies: 3 specific, hands-on, actionable real-world hobbies tailored directly to the visual details in these images, each with 3 concrete starter_kit items.`;
 
   contentBlocks.push({
     type: "text",
     text: promptText,
   });
 
-  // 25s timeout for Vision + 1 single retry (maxAttempts = 2), NO temperature parameter
+  // 25s timeout for Vision + 1 single retry (maxAttempts = 2), NO temperature parameter.
+  // Note: claude-haiku-5-5 enables Extended Thinking by default, which previously consumed all 900 max_tokens
+  // inside a "thinking" block (stop_reason="max_tokens") before emitting output.
+  // We pass both thinking: { type: "disabled" } (thinking_tokens=0) AND max_tokens: 2500 + forced tool_choice
+  // so the complete structured "visual_signals" tool_use payload (~1200-1400 tokens) is always returned cleanly.
   const maxAttempts = 2;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 25000);
     try {
       logs.push(
-        `> [CLAUDE VISION] Attempt ${attempt}/${maxAttempts}: Sending ${validImages.length} image(s) to Anthropic (${selectedModel}, timeout=25s)...`
+        `> [CLAUDE VISION] Attempt ${attempt}/${maxAttempts}: Sending ${validImages.length} image(s) to Anthropic (${selectedModel}, tool_choice=visual_signals, thinking=disabled, max_tokens=2500, timeout=25s)...`
       );
-      const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      const resp = await fetchImpl("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
           "x-api-key": anthropicKey,
@@ -559,7 +663,10 @@ Return ONLY valid JSON matching this exact structure (no markdown fences, no ext
         },
         body: JSON.stringify({
           model: selectedModel,
-          max_tokens: 900,
+          max_tokens: 2500,
+          thinking: { type: "disabled" },
+          tools: [VISUAL_SIGNALS_TOOL],
+          tool_choice: { type: "tool", name: "visual_signals" },
           messages: [
             {
               role: "user",
@@ -576,7 +683,7 @@ Return ONLY valid JSON matching this exact structure (no markdown fences, no ext
         logs.push(
           `  [!] Claude API (${selectedModel}) returned HTTP ${resp.status}: ${errText.slice(
             0,
-            110
+            140
           )}`
         );
         // Do not retry on client/auth/model errors (4xx except 429)
@@ -587,20 +694,52 @@ Return ONLY valid JSON matching this exact structure (no markdown fences, no ext
       }
 
       const data = await resp.json();
-      const rawText: string =
-        data?.content?.find(
-          (c: { type?: string; text?: string }) => c.type === "text"
-        )?.text || "";
+      const stopReason: string = data?.stop_reason || "unknown";
+      const blockTypes: string[] = Array.isArray(data?.content)
+        ? data.content.map((b: { type?: string }) => b?.type || "unknown")
+        : [];
+      const outputTokens = data?.usage?.output_tokens ?? 0;
+      const thinkingTokens =
+        data?.usage?.output_tokens_details?.thinking_tokens ?? 0;
 
-      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        logs.push("  [!] Claude response did not contain JSON block.");
+      logs.push(
+        `  [CLAUDE RAW] Attempt ${attempt}: stop_reason="${stopReason}", block_types=${JSON.stringify(
+          blockTypes
+        )}, output_tokens=${outputTokens} (thinking_tokens=${thinkingTokens})`
+      );
+
+      const toolUseBlock = Array.isArray(data?.content)
+        ? data.content.find(
+            (b: { type?: string; name?: string; input?: unknown }) =>
+              b?.type === "tool_use" && b?.name === "visual_signals"
+          )
+        : null;
+
+      if (!toolUseBlock || !toolUseBlock.input) {
+        logs.push(
+          `  [!] Attempt ${attempt}: Response did not contain tool_use block for "visual_signals" (stop_reason="${stopReason}", blocks=${JSON.stringify(
+            blockTypes
+          )}).`
+        );
         continue;
       }
 
-      const parsed = JSON.parse(jsonMatch[0]) as ClaudeVisionAnalysis;
+      const validation = VisualSignalsToolSchema.safeParse(toolUseBlock.input);
+      if (!validation.success) {
+        logs.push(
+          `  [!] Attempt ${attempt}: Zod validation failed on tool_use.input: ${JSON.stringify(
+            validation.error.issues
+          ).slice(0, 140)}`
+        );
+        continue;
+      }
+
+      const parsed: ClaudeVisionAnalysis = validation.data;
       logs.push(
-        `  [OK] [SIGNAL SOURCE: CLAUDE_VISION (${selectedModel})] Decoded archetype: "${parsed.archetype}"`
+        `  [OK] [SIGNAL SOURCE: claude_vision (${selectedModel})] Validated tool_use "visual_signals" -> Archetype: "${parsed.archetype}"`
+      );
+      logs.push(
+        `  [OK] Claude Visual Tags: ${parsed.tags.join(", ")}`
       );
       logs.push(
         `  [OK] Claude -> Qloo Tag Seeds: ${(
@@ -646,7 +785,7 @@ export async function POST(req: NextRequest) {
     .filter(Boolean);
 
   const logs: string[] = [
-    "> INITIALIZING VISUAL_HOBBY_MARKET ENGINE v3.1 (CLAUDE VISION + QLOO TASTE AI)...",
+    "> INITIALIZING VISUAL_HOBBY_MARKET ENGINE v3.2 (CLAUDE VISION TOOL_USE + QLOO TASTE AI)...",
     `> TARGET QLOO GATEWAY: ${QLOO_BASE_URL}`,
   ];
 
@@ -655,13 +794,14 @@ export async function POST(req: NextRequest) {
   let claudeModelUsed = (
     process.env.CLAUDE_MODEL || "claude-haiku-5-5"
   ).trim();
-  let visionMode = "FALLBACK_HEURISTIC";
-  let signalSource: "CLAUDE_VISION" | "FALLBACK" = "FALLBACK";
+  let visionMode = "FALLBACK_NO_VISION";
+  let signalSource: "claude_vision" | "fallback_no_vision" =
+    "fallback_no_vision";
 
   if (
     anthropicKey &&
     anthropicKey !== "your_anthropic_claude_api_key_here" &&
-    (rawImages.length > 0 || cleanTags.length > 0)
+    rawImages.length > 0
   ) {
     const resVision = await analyzeWithClaudeVision(
       rawImages,
@@ -673,31 +813,37 @@ export async function POST(req: NextRequest) {
     claudeModelUsed = resVision.modelUsed;
     if (claudeAnalysis) {
       visionMode = "CLAUDE_VISION_LIVE";
-      signalSource = "CLAUDE_VISION";
+      signalSource = "claude_vision";
     } else {
       logs.push(
-        `> [SIGNAL SOURCE: FALLBACK_HEURISTIC] Claude Vision (${claudeModelUsed}) did not return analysis -> Using fallback aesthetic signals.`
+        `> [SIGNAL SOURCE: fallback_no_vision (Fallback sin visión)] Claude Vision (${claudeModelUsed}) failed -> No visual reading performed. Using manual/neutral fallback tags only.`
       );
     }
   } else {
     logs.push(
-      "> [SIGNAL SOURCE: FALLBACK_HEURISTIC] ANTHROPIC_API_KEY not configured -> Using fallback aesthetic signals."
+      `> [SIGNAL SOURCE: fallback_no_vision (Fallback sin visión)] ${
+        rawImages.length === 0
+          ? "No images uploaded"
+          : "ANTHROPIC_API_KEY not configured"
+      } -> Using manual/neutral fallback tags without vision.`
     );
   }
 
-  const effectiveTags = Array.from(
-    new Set([
-      ...(claudeAnalysis?.dynamic_tags?.map((t) => t.toLowerCase().trim()) ||
-        []),
-      ...cleanTags,
-    ])
-  ).filter(Boolean);
+  // Neutral fallback when claudeAnalysis is null:
+  // NEVER inject fixed visual aesthetic tags ("botanical", "ceramics & clay", "analog photography").
+  // Use only user's manual cleanTags, or neutral general hackathon tags ["music", "film", "books"].
+  const effectiveTags: string[] = claudeAnalysis
+    ? Array.from(
+        new Set([
+          ...claudeAnalysis.tags.map((t) => t.toLowerCase().trim()),
+          ...cleanTags,
+        ])
+      ).filter(Boolean)
+    : cleanTags.length > 0
+    ? cleanTags
+    : ["music", "film", "books"];
 
-  if (effectiveTags.length === 0) {
-    effectiveTags.push("botanical", "ceramics & clay", "analog photography");
-  }
-
-  logs.push(`> ACTIVE AESTHETIC SIGNALS: ${effectiveTags.join(", ").toUpperCase()}`);
+  logs.push(`> ACTIVE SIGNALS (${signalSource}): ${effectiveTags.join(", ").toUpperCase()}`);
 
   const apiKey = (process.env.QLOO_API_KEY || "").trim();
   const qlooLiveEntities: CulturalEntity[] = [];
@@ -911,13 +1057,17 @@ export async function POST(req: NextRequest) {
               },
             ];
 
+      const rawScore = Number(ch.match_score) || 98;
+      const normalizedScore =
+        rawScore <= 1 ? Math.round(rawScore * 100) : Math.round(rawScore);
+
       hobbyCards.push({
         id: `hobby-claude-${idx}`,
         tag: String(ch.tag || effectiveTags[idx] || "VISUAL VIBE").toUpperCase(),
         title: ch.title,
         category: ch.category || "CLAUDE VISION // CUSTOM HOBBY",
         difficulty: ch.difficulty || "BEGINNER",
-        match_score: Number(ch.match_score) || 98,
+        match_score: normalizedScore,
         description: ch.description,
         starter_kit: Array.isArray(ch.starter_kit)
           ? ch.starter_kit.slice(0, 3)
@@ -1054,11 +1204,19 @@ export async function POST(req: NextRequest) {
 
   logs.push(
     `> SYNTHESIS COMPLETE [SIGNAL SOURCE: ${signalSource}${
-      signalSource === "CLAUDE_VISION" ? ` (${claudeModelUsed})` : ""
+      signalSource === "claude_vision"
+        ? ` (${claudeModelUsed})`
+        : " (Fallback sin visión)"
     } | QLOO: ${qlooMode}]: ${hobbyCards.length} HOBBIES + ${
       allCultural.length
     } QLOO CULTURAL MATCHES READY.`
   );
+
+  const fallbackVibeSummary = `[fallback_no_vision — Fallback sin visión] No se analizaron las imágenes con Claude Vision. Recomendaciones generadas únicamente a partir de tags ${
+    cleanTags.length > 0
+      ? "manuales seleccionados por el usuario"
+      : "generales neutros del hackathon"
+  } (${effectiveTags.join(", ")}) sin lectura visual.`;
 
   return NextResponse.json({
     status: "ok",
@@ -1071,15 +1229,11 @@ export async function POST(req: NextRequest) {
       signal_source: signalSource,
       archetype:
         claudeAnalysis?.archetype ||
-        `COZY ${effectiveTags[0].toUpperCase()} EXPLORER`,
-      tags: effectiveTags,
-      vibe_summary:
-        claudeAnalysis?.visual_narrative ||
-        `Your visual scrapbook blends ${effectiveTags
-          .slice(0, 3)
-          .join(
-            ", "
-          )}! Instead of just saving screenshots on your phone, your aesthetic DNA points to hands-on creative projects, collectible culture, and iconic music & places.`,
+        `FALLBACK (${effectiveTags[0].toUpperCase()}) EXPLORER`,
+      tags: claudeAnalysis ? claudeAnalysis.tags : effectiveTags,
+      vibe_summary: claudeAnalysis
+        ? claudeAnalysis.vibe_summary
+        : fallbackVibeSummary,
       per_image_captions: claudeAnalysis?.per_image_captions || [],
       qloo_seeds: claudeAnalysis?.qloo_seeds || {
         tag_queries: effectiveTags.slice(0, 4),

@@ -150,6 +150,73 @@ def resize_image_backend(data_url: str, index: int, logs: List[str]) -> Optional
         return media_type, b64_data
 
 
+from pydantic import BaseModel, Field
+
+
+class QlooSeedsModel(BaseModel):
+    tag_queries: List[str] = Field(default_factory=list)
+    entity_queries: List[str] = Field(default_factory=list)
+
+
+class CustomHobbyModel(BaseModel):
+    tag: str
+    title: str
+    category: str = "CREATIVE CRAFT"
+    difficulty: str = "BEGINNER"
+    match_score: float = 98.0
+    description: str
+    starter_kit: List[str] = Field(default_factory=list)
+
+
+class VisualSignalsToolModel(BaseModel):
+    tags: List[str] = Field(..., min_length=1)
+    vibe_summary: str = Field(..., min_length=5)
+    archetype: str = "VISUAL MARKET EXPLORER"
+    per_image_captions: List[str] = Field(default_factory=list)
+    qloo_seeds: QlooSeedsModel = Field(default_factory=QlooSeedsModel)
+    custom_hobbies: List[CustomHobbyModel] = Field(default_factory=list)
+
+
+VISUAL_SIGNALS_TOOL_DEF = {
+    "name": "visual_signals",
+    "description": "Extracts structured visual aesthetic tags, a specific visual vibe summary, Qloo taxonomy seeds, and actionable hobbies from the user's uploaded images.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "tags": {"type": "array", "items": {"type": "string"}},
+            "vibe_summary": {"type": "string"},
+            "archetype": {"type": "string"},
+            "per_image_captions": {"type": "array", "items": {"type": "string"}},
+            "qloo_seeds": {
+                "type": "object",
+                "properties": {
+                    "tag_queries": {"type": "array", "items": {"type": "string"}},
+                    "entity_queries": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["tag_queries", "entity_queries"],
+            },
+            "custom_hobbies": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "tag": {"type": "string"},
+                        "title": {"type": "string"},
+                        "category": {"type": "string"},
+                        "difficulty": {"type": "string"},
+                        "match_score": {"type": "number"},
+                        "description": {"type": "string"},
+                        "starter_kit": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": ["tag", "title", "category", "difficulty", "match_score", "description", "starter_kit"],
+                },
+            },
+        },
+        "required": ["tags", "vibe_summary", "archetype", "per_image_captions", "qloo_seeds", "custom_hobbies"],
+    },
+}
+
+
 async def analyze_with_claude_vision(
     images: List[Dict[str, Any]],
     user_tags: List[str],
@@ -159,17 +226,18 @@ async def analyze_with_claude_vision(
     Calls Anthropic Claude Vision with:
     - Single default model: claude-haiku-5-5 (sonnet only if explicitly configured via CLAUDE_MODEL)
     - No temperature parameter
+    - thinking: {"type": "disabled"} + max_tokens: 2500
+    - Forced tool_choice: {"type": "tool", "name": "visual_signals"} + Pydantic validation of tool_use.input
     - Backend-resized images (<=512px JPEG)
     - 25s timeout and 1 single retry (max_attempts = 2)
     """
     selected_model = os.getenv("CLAUDE_MODEL", "claude-haiku-5-5").strip() or "claude-haiku-5-5"
     anthropic_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
-    if not anthropic_key or anthropic_key == "your_anthropic_claude_api_key_here":
+    valid_images = [img for img in (images or []) if str(img.get("dataUrl", "")).startswith("data:image/")][:4]
+    if not anthropic_key or anthropic_key == "your_anthropic_claude_api_key_here" or not valid_images:
         return None, selected_model
 
     content_blocks: List[Dict[str, Any]] = []
-    valid_images = [img for img in (images or []) if str(img.get("dataUrl", "")).startswith("data:image/")][:4]
-
     for idx, img in enumerate(valid_images):
         resized = resize_image_backend(str(img.get("dataUrl", "")), idx, logs)
         if resized:
@@ -182,8 +250,7 @@ async def analyze_with_claude_vision(
     prompt_text = (
         f"You are the Multimodal Visual-to-Semantic Bridge for 'Visual Hobby Market', a Qloo Hackathon application.\n"
         f"Inspect the user's {len(valid_images)} uploaded image(s) (and optional tags: {', '.join(user_tags) or 'none'}) "
-        f"and return ONLY valid JSON with keys: archetype, visual_narrative, per_image_captions, dynamic_tags, "
-        f"qloo_seeds ({{tag_queries, entity_queries}}), and custom_hobbies (3 items with tag, title, category, difficulty, match_score, description, starter_kit)."
+        f"and call the 'visual_signals' tool with tags, vibe_summary, archetype, per_image_captions, qloo_seeds, and custom_hobbies."
     )
     content_blocks.append({"type": "text", "text": prompt_text})
 
@@ -192,7 +259,7 @@ async def analyze_with_claude_vision(
         for attempt in range(1, max_attempts + 1):
             try:
                 logs.append(
-                    f"> [CLAUDE VISION] Attempt {attempt}/{max_attempts}: Sending {len(valid_images)} image(s) to Anthropic ({selected_model}, timeout=25s)..."
+                    f"> [CLAUDE VISION] Attempt {attempt}/{max_attempts}: Sending {len(valid_images)} image(s) to Anthropic ({selected_model}, tool_choice=visual_signals, thinking=disabled, max_tokens=2500, timeout=25s)..."
                 )
                 resp = await client.post(
                     "https://api.anthropic.com/v1/messages",
@@ -203,27 +270,43 @@ async def analyze_with_claude_vision(
                     },
                     json={
                         "model": selected_model,
-                        "max_tokens": 900,
+                        "max_tokens": 2500,
+                        "thinking": {"type": "disabled"},
+                        "tools": [VISUAL_SIGNALS_TOOL_DEF],
+                        "tool_choice": {"type": "tool", "name": "visual_signals"},
                         "messages": [{"role": "user", "content": content_blocks}],
                     },
                     timeout=25.0,
                 )
                 if resp.status_code != 200:
-                    logs.append(f"  [!] Claude API ({selected_model}) returned HTTP {resp.status_code}: {resp.text[:110]}")
+                    logs.append(f"  [!] Claude API ({selected_model}) returned HTTP {resp.status_code}: {resp.text[:140]}")
                     if 400 <= resp.status_code < 500 and resp.status_code != 429:
                         break
                     continue
 
                 data = resp.json()
-                raw_text = next((c.get("text", "") for c in data.get("content", []) if c.get("type") == "text"), "")
-                m = re.search(r"\{[\s\S]*\}", raw_text)
-                if not m:
+                stop_reason = data.get("stop_reason", "unknown")
+                block_types = [b.get("type", "unknown") for b in data.get("content", [])]
+                out_tokens = data.get("usage", {}).get("output_tokens", 0)
+                think_tokens = data.get("usage", {}).get("output_tokens_details", {}).get("thinking_tokens", 0)
+                logs.append(
+                    f"  [CLAUDE RAW] Attempt {attempt}: stop_reason=\"{stop_reason}\", block_types={json.dumps(block_types)}, output_tokens={out_tokens} (thinking_tokens={think_tokens})"
+                )
+
+                tool_block = next(
+                    (b for b in data.get("content", []) if b.get("type") == "tool_use" and b.get("name") == "visual_signals"),
+                    None,
+                )
+                if not tool_block or not isinstance(tool_block.get("input"), dict):
+                    logs.append(f"  [!] Attempt {attempt}: No tool_use block for 'visual_signals'")
                     continue
-                parsed = json.loads(m.group(0))
-                logs.append(f"  [OK] [SIGNAL SOURCE: CLAUDE_VISION ({selected_model})] Decoded archetype: \"{parsed.get('archetype', '')}\"")
+
+                validated = VisualSignalsToolModel.model_validate(tool_block["input"])
+                parsed = validated.model_dump()
+                logs.append(f"  [OK] [SIGNAL SOURCE: claude_vision ({selected_model})] Validated tool_use 'visual_signals' -> Archetype: \"{parsed['archetype']}\"")
                 return parsed, selected_model
             except Exception as exc:
-                logs.append(f"  [!] Claude Vision attempt {attempt}/{max_attempts} failed ({selected_model}): {str(exc)[:80]}")
+                logs.append(f"  [!] Claude Vision attempt {attempt}/{max_attempts} failed ({selected_model}): {str(exc)[:100]}")
 
     return None, selected_model
 
@@ -406,20 +489,18 @@ async def get_hobby_recommendations(
     claude_analysis, claude_model_used = await analyze_with_claude_vision(images or [], clean_tags, logs)
     if claude_analysis:
         vision_mode = "CLAUDE_VISION_LIVE"
-        signal_source = "CLAUDE_VISION"
-        dyn_tags = [str(t).strip().lower() for t in claude_analysis.get("dynamic_tags", []) if str(t).strip()]
-        clean_tags = list(dict.fromkeys(dyn_tags + clean_tags))
+        signal_source = "claude_vision"
+        dyn_tags = [str(t).strip().lower() for t in claude_analysis.get("tags", []) if str(t).strip()]
+        effective_tags = list(dict.fromkeys(dyn_tags + clean_tags))
     else:
-        vision_mode = "FALLBACK_HEURISTIC"
-        signal_source = "FALLBACK"
+        vision_mode = "FALLBACK_NO_VISION"
+        signal_source = "fallback_no_vision"
+        effective_tags = clean_tags if clean_tags else ["music", "film", "books"]
         logs.append(
-            f"> [SIGNAL SOURCE: FALLBACK_HEURISTIC] Claude Vision ({claude_model_used}) did not return analysis -> Using fallback aesthetic signals."
+            f"> [SIGNAL SOURCE: fallback_no_vision (Fallback sin visión)] No visual analysis performed -> Using manual/neutral tags only: {', '.join(effective_tags)}"
         )
 
-    if not clean_tags:
-        clean_tags = ["botanical", "ceramics & clay", "analog photography"]
-
-    logs.append(f"> ACTIVE AESTHETIC SIGNALS: {', '.join(clean_tags).upper()}")
+    logs.append(f"> ACTIVE SIGNALS ({signal_source}): {', '.join(effective_tags).upper()}")
 
     if not entity_types:
         entity_types = ["urn:entity:artist", "urn:entity:place", "urn:entity:book", "urn:entity:movie"]
@@ -431,7 +512,7 @@ async def get_hobby_recommendations(
     if api_key:
         logs.append("> X-API-KEY DETECTED [REDACTED]. CONNECTING TO QLOO HACKATHON API...")
         async with httpx.AsyncClient() as client:
-            entity_ids, tag_urns = await resolve_qloo_signals(client, clean_tags, api_key, logs)
+            entity_ids, tag_urns = await resolve_qloo_signals(client, effective_tags, api_key, logs)
             if entity_ids or tag_urns:
                 qloo_live_entities = await fetch_qloo_insights(
                     client, entity_ids, tag_urns, entity_types, api_key, logs
@@ -444,7 +525,7 @@ async def get_hobby_recommendations(
     hobby_cards: List[Dict[str, Any]] = []
     used_keys = set()
 
-    for tag in clean_tags:
+    for tag in effective_tags:
         matched_key = None
         if tag in AESTHETIC_HOBBY_MATRIX:
             matched_key = tag
@@ -498,7 +579,7 @@ async def get_hobby_recommendations(
                 "difficulty": "BEGINNER",
                 "match_score": 97,
                 "description": (
-                    f"Turn your visual inspiration around #{custom_label} into a real-world hobby: start a weekend DIY project, "
+                    f"Turn your inspiration around #{custom_label} into a real-world hobby: start a weekend DIY project, "
                     "explore cultural picks powered by Qloo, and share your progress with friends."
                 ),
                 "starter_kit": [
@@ -515,7 +596,6 @@ async def get_hobby_recommendations(
             if not any(existing.get("name") == ent.get("name") for existing in all_cultural):
                 all_cultural.append(ent)
 
-    # Ensure all 4 cross-domain types (artist, movie, book, place) have at least one match for the UI filter tabs
     default_cross_domain = [
         {"name": "Plantasia (Mort Garson)", "type": "artist", "sub": "Warm Earth Music for Plants"},
         {"name": "Studio Ghibli / My Neighbor Totoro", "type": "movie", "sub": "Iconic Animation & Visual World"},
@@ -528,7 +608,13 @@ async def get_hobby_recommendations(
             all_cultural.append(fallback_item)
 
     logs.append(
-        f"> SYNTHESIS COMPLETE (SIGNALS={signal_source} [{claude_model_used if signal_source == 'CLAUDE_VISION' else 'LOCAL_TAGS'}] + QLOO={qloo_mode}): {len(hobby_cards)} HOBBIES + {len(all_cultural)} QLOO CULTURAL MATCHES READY."
+        f"> SYNTHESIS COMPLETE [SIGNAL SOURCE: {signal_source} ({claude_model_used if signal_source == 'claude_vision' else 'Fallback sin visión'}) | QLOO: {qloo_mode}]: {len(hobby_cards)} HOBBIES + {len(all_cultural)} QLOO CULTURAL MATCHES READY."
+    )
+
+    fallback_summary = (
+        f"[fallback_no_vision — Fallback sin visión] No se analizaron las imágenes con Claude Vision. "
+        f"Recomendaciones generadas únicamente a partir de tags {'manuales seleccionados por el usuario' if clean_tags else 'generales neutros del hackathon'} "
+        f"({', '.join(effective_tags)}) sin lectura visual."
     )
 
     return {
@@ -536,18 +622,15 @@ async def get_hobby_recommendations(
         "qloo_mode": qloo_mode,
         "vision_mode": vision_mode,
         "signal_source": signal_source,
-        "claude_model_used": claude_model_used if signal_source == "CLAUDE_VISION" else None,
+        "claude_model_used": claude_model_used if signal_source == "claude_vision" else None,
         "qloo_base_url": QLOO_BASE_URL,
         "aesthetic_dna": {
-            "archetype": (claude_analysis or {}).get("archetype") or f"{clean_tags[0].upper()} MARKET CURATOR",
-            "tags": clean_tags,
-            "vibe_summary": (claude_analysis or {}).get("visual_narrative") or (
-                f"Your visual scrapbook blends {', '.join(clean_tags[:3])}! "
-                "Instead of just saving screenshots on your phone, your aesthetic DNA points to hands-on creative projects, "
-                "tactile crafts, and iconic music & places."
-            ),
+            "signal_source": signal_source,
+            "archetype": (claude_analysis or {}).get("archetype") or f"FALLBACK ({effective_tags[0].upper()}) EXPLORER",
+            "tags": claude_analysis["tags"] if claude_analysis else effective_tags,
+            "vibe_summary": claude_analysis["vibe_summary"] if claude_analysis else fallback_summary,
             "per_image_captions": (claude_analysis or {}).get("per_image_captions", []),
-            "qloo_seeds": (claude_analysis or {}).get("qloo_seeds"),
+            "qloo_seeds": (claude_analysis or {}).get("qloo_seeds", {"tag_queries": effective_tags[:4], "entity_queries": []}),
         },
         "hobbies": hobby_cards,
         "qloo_insights": all_cultural[:16],
