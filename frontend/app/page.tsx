@@ -395,10 +395,122 @@ export default function HomePage() {
     new Set(images.flatMap((img) => img.paletteHexes))
   ).slice(0, 8);
 
-  const filteredQlooInsights =
-    mixtapeFilter === "all"
-      ? qlooInsights.slice(0, 6)
-      : qlooInsights.filter((item) => item.type === mixtapeFilter).slice(0, 6);
+  const fallbackMixtapeByType: Record<string, CulturalMatch[]> = {
+    artist: [
+      {
+        name: "Plantasia (Mort Garson)",
+        type: "artist",
+        sub: "Warm Earth Music for Plants & Crafts",
+      },
+      {
+        name: "Ichiko Aoba",
+        type: "artist",
+        sub: "Chamber Folk & Acoustic Daydreams",
+      },
+      {
+        name: "Nujabes",
+        type: "artist",
+        sub: "Mellow Lo-Fi Jazz & Instrumental Beats",
+      },
+      {
+        name: "Men I Trust",
+        type: "artist",
+        sub: "Dreamy Indie Pop & Warm Basslines",
+      },
+    ],
+    movie: [
+      {
+        name: "Studio Ghibli / Whisper of the Heart",
+        type: "movie",
+        sub: "Cozy Creative Craft & Animation Classic",
+      },
+      {
+        name: "The Grand Budapest Hotel (Wes Anderson)",
+        type: "movie",
+        sub: "Symmetrical Pastel Worlds & Nostalgia",
+      },
+      {
+        name: "Amélie (Jean-Pierre Jeunet)",
+        type: "movie",
+        sub: "Whimsical Everyday Treasures & Scrapbooking",
+      },
+      {
+        name: "Paterson (Jim Jarmusch)",
+        type: "movie",
+        sub: "Poetic Slow Living & Notebook Journaling",
+      },
+    ],
+    book: [
+      {
+        name: "Braiding Sweetgrass (Robin Wall Kimmerer)",
+        type: "book",
+        sub: "Botany, Tactile Craft & Slow Living",
+      },
+      {
+        name: "Steal Like an Artist (Austin Kleon)",
+        type: "book",
+        sub: "Creative Scrapbooking & Visual Collage Guide",
+      },
+      {
+        name: "The Artist's Way (Julia Cameron)",
+        type: "book",
+        sub: "Morning Pages & Creative Rituals",
+      },
+      {
+        name: "Wabi-Sabi for Artists, Designers, Poets & Philosophers",
+        type: "book",
+        sub: "Imperfect Textures & Handmade Aesthetics",
+      },
+    ],
+    place: [
+      {
+        name: "Shakespeare and Company",
+        type: "place",
+        sub: "Historic Independent Bookshop & Reading Nook",
+      },
+      {
+        name: "Kew Royal Botanic Gardens",
+        type: "place",
+        sub: "Historic Glasshouse & Botanical Conservatory",
+      },
+      {
+        name: "Tokyo Daikanyama T-Site (Tsutaya Books)",
+        type: "place",
+        sub: "Curated Zines, Stationery, Vinyl & Cafe Sanctuary",
+      },
+      {
+        name: "Centre Pompidou & Local Art Supply Quarter",
+        type: "place",
+        sub: "Design Archive, Exhibition Space & Craft Studios",
+      },
+    ],
+  };
+
+  const filteredQlooInsights = (() => {
+    if (mixtapeFilter === "all") {
+      if (qlooInsights.length > 0) {
+        return qlooInsights.slice(0, 6);
+      }
+      return [
+        fallbackMixtapeByType.artist[0],
+        fallbackMixtapeByType.movie[0],
+        fallbackMixtapeByType.book[0],
+        fallbackMixtapeByType.place[0],
+      ];
+    }
+    const matching = qlooInsights.filter(
+      (item) => (item.type || "").toLowerCase().trim() === mixtapeFilter
+    );
+    const fallbacks = fallbackMixtapeByType[mixtapeFilter] || [];
+    const combined = [...matching];
+    for (const fb of fallbacks) {
+      if (combined.length >= 4) break;
+      if (!combined.some((c) => c.name === fb.name)) {
+        combined.push(fb);
+      }
+    }
+    return combined.slice(0, 4);
+  })();
 
   const typeEmoji: Record<string, string> = {
     artist: "🎵",
@@ -454,7 +566,7 @@ export default function HomePage() {
         {!hasUnlockedResults && (
           <div className="max-w-3xl mx-auto pb-10">
             <Y2KWindow
-              title="01. Your Clothesline Scrapbook (Hang Photos & Tags)"
+              title="Your Clothesline Scrapbook (Hang Photos & Tags)"
               accent="cyan"
               badge={`${images.length} HUNG`}
               sticker="🧺"
@@ -751,9 +863,9 @@ export default function HomePage() {
               </button>
             </div>
 
-            {/* TOP ROW (HORIZONTAL FULL-WIDTH): 04. UNLOCKED HOBBIES & TRINKETS */}
+            {/* TOP ROW (HORIZONTAL FULL-WIDTH): UNLOCKED HOBBIES & TRINKETS */}
             <Y2KWindow
-              title="04. Unlocked Hobbies & Trinkets Powered by Qloo"
+              title="Unlocked Hobbies & Trinkets Powered by Qloo"
               accent="lime"
               badge={`${hobbies.length} HOBBIES FOR YOU`}
               sticker="✨"
@@ -856,12 +968,12 @@ export default function HomePage() {
               </div>
             </Y2KWindow>
 
-            {/* BOTTOM ROW (2 HARMONIOUS COLUMNS): 02. VIBE CHECK + 03. QLOO MIXTAPE */}
+            {/* BOTTOM ROW (2 HARMONIOUS COLUMNS): VIBE CHECK + QLOO MIXTAPE */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-              {/* LEFT COLUMN (6 cols): 02. YOUR COZY VIBE CHECK */}
+              {/* LEFT COLUMN (6 cols): YOUR COZY VIBE CHECK */}
               <div className="lg:col-span-6">
                 <Y2KWindow
-                  title="02. Your Cozy Vibe Check"
+                  title="Your Cozy Vibe Check"
                   accent="lime"
                   badge={
                     signalSource === "claude_vision"
@@ -950,10 +1062,10 @@ export default function HomePage() {
                 </Y2KWindow>
               </div>
 
-              {/* RIGHT COLUMN (6 cols): 03. YOUR QLOO MIXTAPE & TOP PICKS */}
+              {/* RIGHT COLUMN (6 cols): YOUR QLOO MIXTAPE & TOP PICKS */}
               <div className="lg:col-span-6">
                 <Y2KWindow
-                  title="03. Your Qloo Mixtape & Top Picks"
+                  title="Your Qloo Mixtape & Top Picks"
                   accent="pink"
                   badge="TASTE AI™"
                   sticker="🎵"

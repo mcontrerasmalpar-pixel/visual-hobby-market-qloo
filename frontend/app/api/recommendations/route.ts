@@ -1284,42 +1284,140 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const allCultural: CulturalEntity[] = [...qlooLiveEntities];
+  const allCulturalRaw: CulturalEntity[] = [...qlooLiveEntities];
   for (const card of hobbyCards) {
     for (const ent of card.cultural_matches) {
-      if (!allCultural.some((e) => e.name === ent.name)) {
-        allCultural.push(ent);
+      if (!allCulturalRaw.some((e) => e.name === ent.name)) {
+        allCulturalRaw.push(ent);
       }
     }
   }
 
-  const defaultCrossDomain: CulturalEntity[] = [
-    {
-      name: "Plantasia (Mort Garson)",
-      type: "artist",
-      sub: "Warm Earth Music for Plants & Crafts",
-    },
-    {
-      name: "Studio Ghibli / Spirited Away",
-      type: "movie",
-      sub: "Iconic Animation & Visual World",
-    },
-    {
-      name: "Braiding Sweetgrass (Robin Wall Kimmerer)",
-      type: "book",
-      sub: "Botany, Craft & Slow Living",
-    },
-    {
-      name: "Kew Royal Botanic Gardens",
-      type: "place",
-      sub: "Historic Botanical Conservatory",
-    },
-  ];
+  const defaultCrossDomainByType: Record<string, CulturalEntity[]> = {
+    artist: [
+      {
+        name: "Plantasia (Mort Garson)",
+        type: "artist",
+        sub: "Warm Earth Music for Plants & Crafts",
+      },
+      {
+        name: "Ichiko Aoba",
+        type: "artist",
+        sub: "Chamber Folk & Acoustic Daydreams",
+      },
+      {
+        name: "Nujabes",
+        type: "artist",
+        sub: "Mellow Lo-Fi Jazz & Instrumental Beats",
+      },
+      {
+        name: "Men I Trust",
+        type: "artist",
+        sub: "Dreamy Indie Pop & Warm Basslines",
+      },
+    ],
+    movie: [
+      {
+        name: "Studio Ghibli / Whisper of the Heart",
+        type: "movie",
+        sub: "Cozy Creative Craft & Animation Classic",
+      },
+      {
+        name: "The Grand Budapest Hotel (Wes Anderson)",
+        type: "movie",
+        sub: "Symmetrical Pastel Worlds & Nostalgia",
+      },
+      {
+        name: "Amélie (Jean-Pierre Jeunet)",
+        type: "movie",
+        sub: "Whimsical Everyday Treasures & Scrapbooking",
+      },
+      {
+        name: "Paterson (Jim Jarmusch)",
+        type: "movie",
+        sub: "Poetic Slow Living & Notebook Journaling",
+      },
+    ],
+    book: [
+      {
+        name: "Braiding Sweetgrass (Robin Wall Kimmerer)",
+        type: "book",
+        sub: "Botany, Tactile Craft & Slow Living",
+      },
+      {
+        name: "Steal Like an Artist (Austin Kleon)",
+        type: "book",
+        sub: "Creative Scrapbooking & Visual Collage Guide",
+      },
+      {
+        name: "The Artist's Way (Julia Cameron)",
+        type: "book",
+        sub: "Morning Pages & Creative Rituals",
+      },
+      {
+        name: "Wabi-Sabi for Artists, Designers, Poets & Philosophers",
+        type: "book",
+        sub: "Imperfect Textures & Handmade Aesthetics",
+      },
+    ],
+    place: [
+      {
+        name: "Shakespeare and Company",
+        type: "place",
+        sub: "Historic Independent Bookshop & Reading Nook",
+      },
+      {
+        name: "Kew Royal Botanic Gardens",
+        type: "place",
+        sub: "Historic Glasshouse & Botanical Conservatory",
+      },
+      {
+        name: "Tokyo Daikanyama T-Site (Tsutaya Books)",
+        type: "place",
+        sub: "Curated Zines, Stationery, Vinyl & Cafe Sanctuary",
+      },
+      {
+        name: "Centre Pompidou & Local Art Supply Quarter",
+        type: "place",
+        sub: "Design Archive, Exhibition Space & Craft Studios",
+      },
+    ],
+  };
 
-  const existingTypes = new Set(allCultural.map((i) => i.type));
-  for (const item of defaultCrossDomain) {
-    if (!existingTypes.has(item.type)) {
-      allCultural.push(item);
+  // Group by category and ensure every category (artist, movie, book, place) has at least 4 items
+  const categoriesOrder = ["artist", "movie", "book", "place"];
+  const groupedByCategory: Record<string, CulturalEntity[]> = {
+    artist: [],
+    movie: [],
+    book: [],
+    place: [],
+  };
+
+  for (const item of allCulturalRaw) {
+    const t = groupedByCategory[item.type] ? item.type : "artist";
+    if (!groupedByCategory[t].some((existing) => existing.name === item.name)) {
+      groupedByCategory[t].push(item);
+    }
+  }
+
+  for (const cat of categoriesOrder) {
+    const fallbacks = defaultCrossDomainByType[cat] || [];
+    for (const fb of fallbacks) {
+      if (groupedByCategory[cat].length >= 4) break;
+      if (!groupedByCategory[cat].some((existing) => existing.name === fb.name)) {
+        groupedByCategory[cat].push(fb);
+      }
+    }
+  }
+
+  // Interleave categories (artist, movie, book, place) so "All" shows a balanced mix and every filter tab has 4 items
+  const allCultural: CulturalEntity[] = [];
+  for (let i = 0; i < 4; i++) {
+    for (const cat of categoriesOrder) {
+      const candidate = groupedByCategory[cat][i];
+      if (candidate) {
+        allCultural.push(candidate);
+      }
     }
   }
 
@@ -1362,7 +1460,7 @@ export async function POST(req: NextRequest) {
       },
     },
     hobbies: hobbyCards,
-    qloo_insights: allCultural.slice(0, 12),
+    qloo_insights: allCultural.slice(0, 16),
     terminal_logs: logs,
   });
 }
