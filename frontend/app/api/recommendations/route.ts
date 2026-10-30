@@ -14,6 +14,34 @@ interface CulturalEntity {
   source?: string;
 }
 
+interface InputImagePayload {
+  name?: string;
+  dataUrl?: string;
+  dominantHex?: string;
+}
+
+interface ClaudeVisionHobby {
+  tag: string;
+  title: string;
+  category: string;
+  difficulty: string;
+  match_score: number;
+  description: string;
+  starter_kit: string[];
+}
+
+interface ClaudeVisionAnalysis {
+  archetype: string;
+  visual_narrative: string;
+  per_image_captions: string[];
+  dynamic_tags: string[];
+  qloo_seeds: {
+    tag_queries: string[];
+    entity_queries: string[];
+  };
+  custom_hobbies: ClaudeVisionHobby[];
+}
+
 interface AestheticTemplate {
   hobby_title: string;
   category: string;
@@ -329,9 +357,175 @@ function toTitleCase(str: string): string {
   return str.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+function parseDataUrl(dataUrl: string): {
+  mediaType: string;
+  base64Data: string;
+} | null {
+  const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!match) return null;
+  return {
+    mediaType: match[1],
+    base64Data: match[2],
+  };
+}
+
+async function analyzeWithClaudeVision(
+  images: InputImagePayload[],
+  userTags: string[],
+  anthropicKey: string,
+  logs: string[]
+): Promise<ClaudeVisionAnalysis | null> {
+  const validImages = images
+    .filter((img) => img.dataUrl && img.dataUrl.startsWith("data:image/"))
+    .slice(0, 4);
+
+  if (validImages.length === 0 && userTags.length === 0) {
+    return null;
+  }
+
+  const preferredModel =
+    process.env.CLAUDE_MODEL || "claude-sonnet-4-20250514";
+  const candidateModels = Array.from(
+    new Set([
+      preferredModel,
+      "claude-sonnet-4-20250514",
+      "claude-3-5-sonnet-latest",
+      "claude-3-haiku-20240307",
+    ])
+  );
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const contentBlocks: any[] = [];
+
+  for (const img of validImages) {
+    const parsed = parseDataUrl(img.dataUrl || "");
+    if (parsed) {
+      contentBlocks.push({
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: parsed.mediaType,
+          data: parsed.base64Data,
+        },
+      });
+    }
+  }
+
+  const promptText = `You are the Multimodal Visual-to-Semantic Bridge for "Visual Hobby Market", a Qloo Hackathon application.
+Your job is to inspect the user's ${validImages.length} uploaded visual inspiration image(s) (and their optional selected tags: ${
+    userTags.join(", ") || "none"
+  }) and translate their nuanced visual intuition into:
+1. A poetic, specific visual reading that captures subtle details fixed tags miss (e.g. "Warm late-afternoon sunlight in a kitchen with hanging pothos, speckled stoneware, and analog paper textures").
+2. Semantic seeds in the exact vocabulary that Qloo's Taste AI taxonomy understands:
+   - tag_queries: 4 to 6 short genre/style/mood keywords for Qloo's /v2/tags endpoint (e.g. "ambient", "indie folk", "botanical", "ceramics", "art house", "japanese pop", "jazz hop", "minimalism").
+   - entity_queries: 4 to 6 real, well-known cultural entities (musical artists, film directors, movies, books, or iconic places) that match the visual vibe for Qloo's /search endpoint (e.g. "Mort Garson", "Studio Ghibli", "Nujabes", "Wong Kar-wai", "Kinfolk", "Ichiko Aoba").
+3. 3 specific, hands-on, actionable real-world hobbies tailored directly to the visual details in these images (not generic templates), each with 3 concrete starter_kit items.
+
+Return ONLY valid JSON matching this exact structure (no markdown fences, no extra text):
+{
+  "archetype": "3-5 WORD CREATIVE PERSONA IN CAPS",
+  "visual_narrative": "2-sentence specific description of the lighting, textures, objects, and atmosphere across the uploaded images and how they translate into a lifestyle vibe.",
+  "per_image_captions": ["short 2-4 word micro-vibe for image 1", "short 2-4 word micro-vibe for image 2"],
+  "dynamic_tags": ["specific vibe tag 1", "specific vibe tag 2", "specific vibe tag 3", "specific vibe tag 4"],
+  "qloo_seeds": {
+    "tag_queries": ["genre or style 1", "genre or style 2", "genre or style 3", "genre or style 4"],
+    "entity_queries": ["Real Artist or Movie 1", "Real Artist or Director 2", "Real Book or Author 3", "Real Place or Cultural Icon 4"]
+  },
+  "custom_hobbies": [
+    {
+      "tag": "SHORT VIBE TAG",
+      "title": "Specific Actionable Hobby Title",
+      "category": "CATEGORY / CRAFT",
+      "difficulty": "BEGINNER",
+      "match_score": 99,
+      "description": "2 sentences explaining how to practice this hobby based on the exact aesthetic details in the user's photos.",
+      "starter_kit": ["Item 1", "Item 2", "Item 3"]
+    }
+  ]
+}`;
+
+  contentBlocks.push({
+    type: "text",
+    text: promptText,
+  });
+
+  for (const model of candidateModels) {
+    try {
+      logs.push(
+        `> [CLAUDE VISION] Sending ${validImages.length} image(s) to Anthropic (${model})...`
+      );
+      const resp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": anthropicKey,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 1200,
+          temperature: 0.4,
+          messages: [
+            {
+              role: "user",
+              content: contentBlocks,
+            },
+          ],
+        }),
+      });
+
+      if (!resp.ok) {
+        const errText = await resp.text();
+        logs.push(
+          `  [!] Claude API (${model}) returned HTTP ${resp.status}: ${errText.slice(
+            0,
+            90
+          )}`
+        );
+        continue;
+      }
+
+      const data = await resp.json();
+      const rawText: string =
+        data?.content?.find(
+          (c: { type?: string; text?: string }) => c.type === "text"
+        )?.text || "";
+
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        logs.push("  [!] Claude response did not contain JSON block.");
+        continue;
+      }
+
+      const parsed = JSON.parse(jsonMatch[0]) as ClaudeVisionAnalysis;
+      logs.push(
+        `  [OK] Claude Vision decoded archetype: "${parsed.archetype}"`
+      );
+      logs.push(
+        `  [OK] Claude -> Qloo Tag Seeds: ${(
+          parsed.qloo_seeds?.tag_queries || []
+        ).join(", ")}`
+      );
+      logs.push(
+        `  [OK] Claude -> Qloo Entity Seeds: ${(
+          parsed.qloo_seeds?.entity_queries || []
+        ).join(", ")}`
+      );
+      return parsed;
+    } catch (err) {
+      logs.push(`  [!] Claude Vision error (${model}): ${String(err).slice(0, 80)}`);
+    }
+  }
+
+  return null;
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const rawTags: string[] = Array.isArray(body.tags) ? body.tags : [];
+  const rawImages: InputImagePayload[] = Array.isArray(body.images)
+    ? body.images
+    : [];
   const entityTypes: string[] = Array.isArray(body.entity_types)
     ? body.entity_types
     : [
@@ -344,15 +538,49 @@ export async function POST(req: NextRequest) {
   const cleanTags = rawTags
     .map((t) => String(t).trim().toLowerCase())
     .filter(Boolean);
-  if (cleanTags.length === 0) {
-    cleanTags.push("botanical", "anime", "y2k retro");
-  }
 
   const logs: string[] = [
-    "> INITIALIZING VISUAL_HOBBY_MARKET ENGINE v2.4...",
-    `> TARGET GATEWAY: ${QLOO_BASE_URL}`,
-    `> DECODED VISUAL DNA TAGS: ${cleanTags.join(", ").toUpperCase()}`,
+    "> INITIALIZING VISUAL_HOBBY_MARKET ENGINE v3.0 (CLAUDE VISION + QLOO TASTE AI)...",
+    `> TARGET QLOO GATEWAY: ${QLOO_BASE_URL}`,
   ];
+
+  const anthropicKey = (process.env.ANTHROPIC_API_KEY || "").trim();
+  let claudeAnalysis: ClaudeVisionAnalysis | null = null;
+  let visionMode = "CANVAS_HEURISTIC";
+
+  if (
+    anthropicKey &&
+    anthropicKey !== "your_anthropic_claude_api_key_here" &&
+    (rawImages.length > 0 || cleanTags.length > 0)
+  ) {
+    claudeAnalysis = await analyzeWithClaudeVision(
+      rawImages,
+      cleanTags,
+      anthropicKey,
+      logs
+    );
+    if (claudeAnalysis) {
+      visionMode = "CLAUDE_VISION_LIVE";
+    }
+  } else if (rawImages.length > 0) {
+    logs.push(
+      "> [NOTICE] ANTHROPIC_API_KEY not set -> Using local Color DNA + tag heuristics (Add ANTHROPIC_API_KEY for Claude Vision)."
+    );
+  }
+
+  const effectiveTags = Array.from(
+    new Set([
+      ...(claudeAnalysis?.dynamic_tags?.map((t) => t.toLowerCase().trim()) ||
+        []),
+      ...cleanTags,
+    ])
+  ).filter(Boolean);
+
+  if (effectiveTags.length === 0) {
+    effectiveTags.push("botanical", "anime", "y2k retro");
+  }
+
+  logs.push(`> ACTIVE AESTHETIC SIGNALS: ${effectiveTags.join(", ").toUpperCase()}`);
 
   const apiKey = (process.env.QLOO_API_KEY || "").trim();
   const qlooLiveEntities: CulturalEntity[] = [];
@@ -367,19 +595,37 @@ export async function POST(req: NextRequest) {
       Accept: "application/json",
     };
 
-    const searchTerms: string[] = [];
-    for (const t of cleanTags.slice(0, 4)) {
-      searchTerms.push(t);
+    // Combine Claude's semantic tag_queries & entity_queries with user tags
+    const tagSearchTerms: string[] = [];
+    const entitySearchTerms: string[] = [];
+
+    if (claudeAnalysis?.qloo_seeds) {
+      tagSearchTerms.push(...(claudeAnalysis.qloo_seeds.tag_queries || []));
+      entitySearchTerms.push(
+        ...(claudeAnalysis.qloo_seeds.entity_queries || [])
+      );
+    }
+
+    for (const t of effectiveTags.slice(0, 4)) {
+      tagSearchTerms.push(t);
       if (AESTHETIC_HOBBY_MATRIX[t]) {
-        searchTerms.push(AESTHETIC_HOBBY_MATRIX[t].qloo_queries[0]);
+        tagSearchTerms.push(...AESTHETIC_HOBBY_MATRIX[t].qloo_queries.slice(0, 2));
+        entitySearchTerms.push(
+          AESTHETIC_HOBBY_MATRIX[t].fallback_entities[0].name.split(" - ")[0]
+        );
+      } else {
+        entitySearchTerms.push(t);
       }
     }
-    const uniqueTerms = Array.from(new Set(searchTerms)).slice(0, 4);
+
+    const uniqueTagTerms = Array.from(new Set(tagSearchTerms)).slice(0, 5);
+    const uniqueEntityTerms = Array.from(new Set(entitySearchTerms)).slice(0, 5);
 
     const tagUrns: string[] = [];
     const entityIds: string[] = [];
 
-    for (const term of uniqueTerms) {
+    // 1A. Resolve Qloo Tag URNs via /v2/tags
+    for (const term of uniqueTagTerms) {
       try {
         const tagUrl = `${QLOO_BASE_URL}/v2/tags?filter.query=${encodeURIComponent(
           term
@@ -394,7 +640,7 @@ export async function POST(req: NextRequest) {
               const id = item?.id || item?.tag_id;
               if (id && !tagUrns.includes(id)) {
                 tagUrns.push(id);
-                logs.push(`  [+] Resolved Tag URN: ${id}`);
+                logs.push(`  [+] Qloo Tag URN: ${id}`);
               }
             }
           }
@@ -402,7 +648,10 @@ export async function POST(req: NextRequest) {
       } catch {
         // continue
       }
+    }
 
+    // 1B. Resolve Qloo Entity IDs via /search (powered by Claude's entity_queries!)
+    for (const term of uniqueEntityTerms) {
       try {
         const searchUrl = `${QLOO_BASE_URL}/search?query=${encodeURIComponent(
           term
@@ -417,7 +666,11 @@ export async function POST(req: NextRequest) {
               const entId = ent?.entity_id || ent?.id;
               if (entId && !entityIds.includes(String(entId))) {
                 entityIds.push(String(entId));
-                logs.push(`  [+] Resolved Entity ID: ${ent?.name || term}`);
+                logs.push(
+                  `  [+] Qloo Entity Seed: ${ent?.name || term} (${String(
+                    entId
+                  ).slice(0, 10)}...)`
+                );
               }
             }
           }
@@ -427,6 +680,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Step 2: Query Qloo /v2/insights with resolved Tag URNs and Entity IDs
     if (tagUrns.length > 0 || entityIds.length > 0) {
       for (const etype of entityTypes) {
         try {
@@ -437,11 +691,11 @@ export async function POST(req: NextRequest) {
           if (entityIds.length > 0) {
             params.set(
               "signal.interests.entities",
-              entityIds.slice(0, 3).join(",")
+              entityIds.slice(0, 4).join(",")
             );
           }
           if (tagUrns.length > 0) {
-            params.set("signal.interests.tags", tagUrns.slice(0, 3).join(","));
+            params.set("signal.interests.tags", tagUrns.slice(0, 4).join(","));
           }
 
           const insightsUrl = `${QLOO_BASE_URL}/v2/insights?${params.toString()}`;
@@ -498,85 +752,141 @@ export async function POST(req: NextRequest) {
     starter_kit: string[];
     cultural_matches: CulturalEntity[];
   }> = [];
-  const usedKeys = new Set<string>();
 
-  for (const tag of cleanTags) {
-    let matchedKey: string | null = null;
-    if (AESTHETIC_HOBBY_MATRIX[tag]) {
-      matchedKey = tag;
-    } else {
-      for (const k of Object.keys(AESTHETIC_HOBBY_MATRIX)) {
-        if (tag.includes(k) || k.includes(tag)) {
-          matchedKey = k;
-          break;
-        }
-      }
-    }
-
-    if (matchedKey && !usedKeys.has(matchedKey)) {
-      usedKeys.add(matchedKey);
-      const template = AESTHETIC_HOBBY_MATRIX[matchedKey];
-      const idx = hobbyCards.length * 2;
+  // If Claude Vision generated custom hobbies tailored to the exact photos, use them first!
+  if (
+    claudeAnalysis?.custom_hobbies &&
+    Array.isArray(claudeAnalysis.custom_hobbies) &&
+    claudeAnalysis.custom_hobbies.length > 0
+  ) {
+    claudeAnalysis.custom_hobbies.slice(0, 3).forEach((ch, idx) => {
+      const sliceStart = idx * 2;
       const sliceEntities =
         qlooLiveEntities.length > 0
-          ? qlooLiveEntities.slice(idx, idx + 3).length > 0
-            ? qlooLiveEntities.slice(idx, idx + 3)
+          ? qlooLiveEntities.slice(sliceStart, sliceStart + 3).length > 0
+            ? qlooLiveEntities.slice(sliceStart, sliceStart + 3)
             : qlooLiveEntities.slice(0, 3)
-          : template.fallback_entities;
-
-      hobbyCards.push({
-        id: `hobby-${matchedKey.replace(/\s+/g, "-")}`,
-        tag: matchedKey.toUpperCase(),
-        title: template.hobby_title,
-        category: template.category,
-        difficulty: template.difficulty,
-        match_score: template.match_score,
-        description: template.description,
-        starter_kit: template.starter_kit,
-        cultural_matches: sliceEntities,
-      });
-    } else if (!usedKeys.has(tag)) {
-      usedKeys.add(tag);
-      const customLabel = tag.toUpperCase();
-      const titleTag = toTitleCase(tag);
-      const idx = hobbyCards.length * 2;
-      const sliceEntities =
-        qlooLiveEntities.length > 0 &&
-        qlooLiveEntities.slice(idx, idx + 3).length > 0
-          ? qlooLiveEntities.slice(idx, idx + 3)
           : [
               {
-                name: `${titleTag} Creators & Community`,
+                name:
+                  claudeAnalysis?.qloo_seeds?.entity_queries?.[idx] ||
+                  "Plantasia (Mort Garson)",
                 type: "artist",
-                sub: `Qloo Taste Match (${customLabel})`,
+                sub: "Qloo Cultural Match",
               },
               {
-                name: `${titleTag} Studios & Local Spots`,
+                name:
+                  claudeAnalysis?.qloo_seeds?.entity_queries?.[idx + 1] ||
+                  "Studio Ghibli",
+                type: "movie",
+                sub: "Qloo Aesthetic Affinity",
+              },
+              {
+                name: "Independent Zine & Craft Sanctuary",
                 type: "place",
-                sub: "Recommended Cultural Spot",
-              },
-              {
-                name: `The Essential ${titleTag} Zine`,
-                type: "book",
-                sub: "Visual Reference & Guide",
+                sub: "Qloo Recommended Spot",
               },
             ];
 
       hobbyCards.push({
-        id: `hobby-custom-${tag.replace(/\s+/g, "-")}`,
-        tag: customLabel,
-        title: `Hands-On ${titleTag} Creation, Collecting & DIY Club`,
-        category: `CUSTOM STICKER // ${customLabel}`,
-        difficulty: "BEGINNER",
-        match_score: 97,
-        description: `Turn your visual inspiration around #${customLabel} into a real-world hobby: start a weekend DIY project, explore cultural picks powered by Qloo, and share your progress with friends.`,
-        starter_kit: [
-          `Starter kit for ${tag} projects`,
-          "Physical moodboard / Scrapbook journal",
-          `Curated ${tag} playlist & culture via Qloo API`,
-        ],
+        id: `hobby-claude-${idx}`,
+        tag: String(ch.tag || effectiveTags[idx] || "VISUAL VIBE").toUpperCase(),
+        title: ch.title,
+        category: ch.category || "CLAUDE VISION // CUSTOM HOBBY",
+        difficulty: ch.difficulty || "BEGINNER",
+        match_score: Number(ch.match_score) || 98,
+        description: ch.description,
+        starter_kit: Array.isArray(ch.starter_kit)
+          ? ch.starter_kit.slice(0, 3)
+          : [
+              "Dedicated starter toolkit",
+              "Visual inspiration journal",
+              "Qloo cultural mixtape",
+            ],
         cultural_matches: sliceEntities,
       });
+    });
+  } else {
+    // Fallback to matrix + custom tag synthesis when no Claude Vision response
+    const usedKeys = new Set<string>();
+    for (const tag of effectiveTags) {
+      let matchedKey: string | null = null;
+      if (AESTHETIC_HOBBY_MATRIX[tag]) {
+        matchedKey = tag;
+      } else {
+        for (const k of Object.keys(AESTHETIC_HOBBY_MATRIX)) {
+          if (tag.includes(k) || k.includes(tag)) {
+            matchedKey = k;
+            break;
+          }
+        }
+      }
+
+      if (matchedKey && !usedKeys.has(matchedKey)) {
+        usedKeys.add(matchedKey);
+        const template = AESTHETIC_HOBBY_MATRIX[matchedKey];
+        const idx = hobbyCards.length * 2;
+        const sliceEntities =
+          qlooLiveEntities.length > 0
+            ? qlooLiveEntities.slice(idx, idx + 3).length > 0
+              ? qlooLiveEntities.slice(idx, idx + 3)
+              : qlooLiveEntities.slice(0, 3)
+            : template.fallback_entities;
+
+        hobbyCards.push({
+          id: `hobby-${matchedKey.replace(/\s+/g, "-")}`,
+          tag: matchedKey.toUpperCase(),
+          title: template.hobby_title,
+          category: template.category,
+          difficulty: template.difficulty,
+          match_score: template.match_score,
+          description: template.description,
+          starter_kit: template.starter_kit,
+          cultural_matches: sliceEntities,
+        });
+      } else if (!usedKeys.has(tag)) {
+        usedKeys.add(tag);
+        const customLabel = tag.toUpperCase();
+        const titleTag = toTitleCase(tag);
+        const idx = hobbyCards.length * 2;
+        const sliceEntities =
+          qlooLiveEntities.length > 0 &&
+          qlooLiveEntities.slice(idx, idx + 3).length > 0
+            ? qlooLiveEntities.slice(idx, idx + 3)
+            : [
+                {
+                  name: `${titleTag} Creators & Community`,
+                  type: "artist",
+                  sub: `Qloo Taste Match (${customLabel})`,
+                },
+                {
+                  name: `${titleTag} Studios & Local Spots`,
+                  type: "place",
+                  sub: "Recommended Cultural Spot",
+                },
+                {
+                  name: `The Essential ${titleTag} Zine`,
+                  type: "book",
+                  sub: "Visual Reference & Guide",
+                },
+              ];
+
+        hobbyCards.push({
+          id: `hobby-custom-${tag.replace(/\s+/g, "-")}`,
+          tag: customLabel,
+          title: `Hands-On ${titleTag} Creation, Collecting & DIY Club`,
+          category: `CUSTOM STICKER // ${customLabel}`,
+          difficulty: "BEGINNER",
+          match_score: 97,
+          description: `Turn your visual inspiration around #${customLabel} into a real-world hobby: start a weekend DIY project, explore cultural picks powered by Qloo, and share your progress with friends.`,
+          starter_kit: [
+            `Starter kit for ${tag} projects`,
+            "Physical moodboard / Scrapbook journal",
+            `Curated ${tag} playlist & culture via Qloo API`,
+          ],
+          cultural_matches: sliceEntities,
+        });
+      }
     }
   }
 
@@ -620,21 +930,31 @@ export async function POST(req: NextRequest) {
   }
 
   logs.push(
-    `> SYNTHESIS COMPLETE: ${hobbyCards.length} HOBBIES + ${allCultural.length} QLOO CULTURAL MATCHES READY.`
+    `> SYNTHESIS COMPLETE (${visionMode} + ${qlooMode}): ${hobbyCards.length} HOBBIES + ${allCultural.length} QLOO CULTURAL MATCHES READY.`
   );
 
   return NextResponse.json({
     status: "ok",
+    vision_mode: visionMode,
     qloo_mode: qlooMode,
     qloo_base_url: QLOO_BASE_URL,
     aesthetic_dna: {
-      archetype: `COZY ${cleanTags[0].toUpperCase()} EXPLORER`,
-      tags: cleanTags,
-      vibe_summary: `Your visual scrapbook blends ${cleanTags
-        .slice(0, 3)
-        .join(
-          ", "
-        )}! Instead of just saving screenshots on your phone, your aesthetic DNA points to hands-on creative projects, collectible culture, and iconic music & places.`,
+      archetype:
+        claudeAnalysis?.archetype ||
+        `COZY ${effectiveTags[0].toUpperCase()} EXPLORER`,
+      tags: effectiveTags,
+      vibe_summary:
+        claudeAnalysis?.visual_narrative ||
+        `Your visual scrapbook blends ${effectiveTags
+          .slice(0, 3)
+          .join(
+            ", "
+          )}! Instead of just saving screenshots on your phone, your aesthetic DNA points to hands-on creative projects, collectible culture, and iconic music & places.`,
+      per_image_captions: claudeAnalysis?.per_image_captions || [],
+      qloo_seeds: claudeAnalysis?.qloo_seeds || {
+        tag_queries: effectiveTags.slice(0, 4),
+        entity_queries: [],
+      },
     },
     hobbies: hobbyCards,
     qloo_insights: allCultural.slice(0, 12),

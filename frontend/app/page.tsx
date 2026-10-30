@@ -11,6 +11,7 @@ interface UploadedImage {
   id: string;
   name: string;
   previewUrl: string;
+  dataUrl?: string;
   detectedTag: string;
   dominantHex: string;
   paletteHexes: string[];
@@ -96,16 +97,21 @@ export default function HomePage() {
   const [copiedCard, setCopiedCard] = useState(false);
   const [showJudgeLogs, setShowJudgeLogs] = useState(false);
 
-  // Results from FastAPI / Qloo
+  // Results from Claude Vision + Qloo
   const [archetype, setArchetype] = useState("COZY INDIE EXPLORER");
   const [vibeSummary, setVibeSummary] = useState(
-    "Hang your favorite screenshots on the clothesline above or pick your aesthetic stickers to unlock cozy hobbies and cultural picks powered by Qloo!"
+    "Hang your favorite screenshots on the clothesline above or pick your aesthetic stickers to unlock cozy hobbies and cultural picks powered by Claude Vision & Qloo!"
   );
+  const [visionMode, setVisionMode] = useState<string>("READY");
   const [qlooMode, setQlooMode] = useState<string>("QLOO_READY");
+  const [qlooSeeds, setQlooSeeds] = useState<{
+    tag_queries: string[];
+    entity_queries: string[];
+  }>({ tag_queries: [], entity_queries: [] });
   const [hobbies, setHobbies] = useState<HobbyCard[]>([]);
   const [qlooInsights, setQlooInsights] = useState<CulturalMatch[]>([]);
   const [terminalLogs, setTerminalLogs] = useState<string[]>([
-    "🍀 QLOO HOBBY MARKET ENGINE v2.4 READY...",
+    "🍀 QLOO HOBBY MARKET ENGINE v3.0 (CLAUDE VISION + QLOO TASTE AI) READY...",
     "☁️ TARGET GATEWAY: https://hackathon.api.qloo.com/v2/insights",
   ]);
 
@@ -240,10 +246,31 @@ export default function HomePage() {
           }
         }
 
+        // Also create a compressed JPEG dataUrl (max 768px) for Claude Vision API
+        let dataUrl = "";
+        try {
+          const maxDim = 768;
+          const scale = Math.min(
+            1,
+            maxDim / Math.max(img.width || 768, img.height || 768)
+          );
+          const vCanvas = document.createElement("canvas");
+          vCanvas.width = Math.max(1, Math.round((img.width || 512) * scale));
+          vCanvas.height = Math.max(1, Math.round((img.height || 512) * scale));
+          const vCtx = vCanvas.getContext("2d");
+          if (vCtx) {
+            vCtx.drawImage(img, 0, 0, vCanvas.width, vCanvas.height);
+            dataUrl = vCanvas.toDataURL("image/jpeg", 0.8);
+          }
+        } catch {
+          // ignore if canvas tainted
+        }
+
         resolve({
           id: `${file.name}-${Date.now()}-${Math.random()}`,
           name: file.name,
           previewUrl: url,
+          dataUrl,
           detectedTag,
           dominantHex,
           paletteHexes,
@@ -279,7 +306,7 @@ export default function HomePage() {
     ).slice(0, 5);
     setSelectedTags(extracted);
 
-    await fetchRecommendations(extracted);
+    await fetchRecommendations(extracted, combined);
   }
 
   function handleRemoveImage(idToRemove: string) {
@@ -298,7 +325,7 @@ export default function HomePage() {
       : [...selectedTags, tag];
     setSelectedTags(updated);
     if (hasUnlockedResults && updated.length > 0) {
-      fetchRecommendations(updated);
+      fetchRecommendations(updated, images);
     }
   }
 
@@ -318,11 +345,14 @@ export default function HomePage() {
     setCustomTagInput("");
 
     if (hasUnlockedResults) {
-      await fetchRecommendations(nextSelected);
+      await fetchRecommendations(nextSelected, images);
     }
   }
 
-  async function fetchRecommendations(tagsToQuery: string[] = selectedTags) {
+  async function fetchRecommendations(
+    tagsToQuery: string[] = selectedTags,
+    imagesToAnalyze: UploadedImage[] = images
+  ) {
     const effectiveTags =
       tagsToQuery.length > 0 ? tagsToQuery : ["botanical", "anime", "y2k retro"];
     setIsLoading(true);
@@ -334,6 +364,11 @@ export default function HomePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           tags: effectiveTags,
+          images: imagesToAnalyze.map((img) => ({
+            name: img.name,
+            dataUrl: img.dataUrl || "",
+            dominantHex: img.dominantHex,
+          })),
           entity_types: [
             "urn:entity:artist",
             "urn:entity:place",
@@ -350,7 +385,32 @@ export default function HomePage() {
       const data = await res.json();
       setArchetype(data.aesthetic_dna?.archetype || "COZY INDIE EXPLORER");
       setVibeSummary(data.aesthetic_dna?.vibe_summary || "");
+      setVisionMode(data.vision_mode || "CANVAS_HEURISTIC");
       setQlooMode(data.qloo_mode || "QLOO_LIVE");
+      if (data.aesthetic_dna?.qloo_seeds) {
+        setQlooSeeds(data.aesthetic_dna.qloo_seeds);
+      }
+
+      // If Claude Vision discovered dynamic tags, add them to the scrapbook!
+      if (Array.isArray(data.aesthetic_dna?.tags) && data.aesthetic_dna.tags.length > 0) {
+        const returnedTags: string[] = data.aesthetic_dna.tags;
+        setAvailableTags((prev) => Array.from(new Set([...prev, ...returnedTags])));
+        setSelectedTags(returnedTags.slice(0, 6));
+      }
+
+      // If Claude Vision returned per-image micro-captions, update the photo badges on the clothesline!
+      if (
+        Array.isArray(data.aesthetic_dna?.per_image_captions) &&
+        data.aesthetic_dna.per_image_captions.length > 0
+      ) {
+        const captions: string[] = data.aesthetic_dna.per_image_captions;
+        setImages((prev) =>
+          prev.map((item, idx) =>
+            captions[idx] ? { ...item, detectedTag: captions[idx] } : item
+          )
+        );
+      }
+
       setHobbies(data.hobbies || []);
       setQlooInsights(data.qloo_insights || []);
       if (Array.isArray(data.terminal_logs)) {
@@ -365,7 +425,7 @@ export default function HomePage() {
     } catch (err) {
       setTerminalLogs((prev) => [
         ...prev,
-        `[!] Connect FastAPI at ${getApiBase() || "/api"}: ${String(err)}`,
+        `[!] Connect API at ${getApiBase() || "/api"}: ${String(err)}`,
       ]);
     } finally {
       setIsLoading(false);
@@ -753,12 +813,14 @@ export default function HomePage() {
 
                         <button
                           type="button"
-                          onClick={() => fetchRecommendations(selectedTags)}
+                          onClick={() =>
+                            fetchRecommendations(selectedTags, images)
+                          }
                           disabled={isLoading}
                           className="cozy-pill-btn bg-[#A7F3D0] hover:bg-[#6EE7B7] text-[#4A3531] font-extrabold text-xs sm:text-sm px-6 py-2 disabled:opacity-50"
                         >
                           {isLoading
-                            ? "☁️ Asking Qloo..."
+                            ? "🔭 Claude Vision + Qloo..."
                             : "✨ Find My Hobbies! go go go !! →"}
                         </button>
                       </div>
@@ -773,7 +835,11 @@ export default function HomePage() {
                   <Y2KWindow
                     title="02. Your Cozy Vibe Check"
                     accent="lime"
-                    badge="UNLOCKED"
+                    badge={
+                      visionMode === "CLAUDE_VISION_LIVE"
+                        ? "CLAUDE VISION + QLOO"
+                        : "UNLOCKED"
+                    }
                     sticker="🍀"
                   >
                     <div className="space-y-3 text-center">
@@ -786,9 +852,47 @@ export default function HomePage() {
                         </div>
                       </div>
 
-                      <p className="text-xs sm:text-sm font-bold text-[#4A3531] leading-relaxed bg-white/95 p-3.5 rounded-2xl border-2 border-dashed border-[#4A3531]">
-                        {vibeSummary}
-                      </p>
+                      <div className="text-left bg-white/95 p-3.5 rounded-2xl border-2 border-dashed border-[#4A3531] space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-extrabold text-[#047857] uppercase">
+                            🔭 Visual Reading (Input Bridge):
+                          </span>
+                          <span className="text-[11px] font-extrabold bg-[#E0F2FE] text-[#075985] px-2 py-0.5 rounded-full border border-[#4A3531]">
+                            {visionMode === "CLAUDE_VISION_LIVE"
+                              ? "Claude Vision AI"
+                              : "Visual DNA"}
+                          </span>
+                        </div>
+                        <p className="text-xs sm:text-sm font-bold text-[#4A3531] leading-relaxed">
+                          {vibeSummary}
+                        </p>
+                      </div>
+
+                      {/* Semantic Seeds Translated for Qloo Taxonomy */}
+                      {(qlooSeeds.entity_queries.length > 0 ||
+                        qlooSeeds.tag_queries.length > 0) && (
+                        <div className="text-left bg-[#E0F2FE]/60 border-2 border-[#4A3531] rounded-2xl p-3 space-y-1.5">
+                          <div className="text-xs font-extrabold text-[#4A3531] uppercase">
+                            🎯 Translated Seeds for Qloo Taxonomy:
+                          </div>
+                          {qlooSeeds.entity_queries.length > 0 && (
+                            <div className="text-xs font-bold text-[#4A3531]">
+                              <span className="text-[#075985] font-extrabold">
+                                Anchor Entities (/search):{" "}
+                              </span>
+                              {qlooSeeds.entity_queries.join(" • ")}
+                            </div>
+                          )}
+                          {qlooSeeds.tag_queries.length > 0 && (
+                            <div className="text-xs font-bold text-[#4A3531]">
+                              <span className="text-[#065F46] font-extrabold">
+                                Taxonomy Tags (/v2/tags):{" "}
+                              </span>
+                              {qlooSeeds.tag_queries.join(" • ")}
+                            </div>
+                          )}
+                        </div>
+                      )}
 
                       <div className="flex flex-wrap justify-center gap-1.5">
                         {selectedTags.map((t) => (
